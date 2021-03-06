@@ -1,0 +1,218 @@
+<!DOCTYPE HTML>
+
+<html lang='en'>
+	<head>
+		<title>持续集成-Jenkins &middot; Yeqown</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		
+		
+		
+		<link rel="stylesheet" href="/assets/css/main.min.css">
+		
+		
+		<link rel="shortcut icon" href="favicon.ico">
+		
+		
+		<noscript><link rel="stylesheet" href='/assets/css/noscript.css' /></noscript>
+		<link rel="stylesheet" href="/highlight/styles/monokai-sublime.css">
+		
+		<script src="/highlight/highlight.pack.js"></script>
+		<script>hljs.initHighlightingOnLoad();</script>
+	</head>
+	<body lang='en' class="is-preload">
+
+		
+			<div id="wrapper">
+
+                
+<header id="header">
+    <a href='/' class="logo">Yeqown</a>
+</header>
+
+                
+
+<nav id="nav">
+    <ul class="links">
+        <li class="active"><a href='/'>Yeqown</a></li>
+        
+        <li><a href='/#footer'>Contact</a></li>
+        
+        
+    </ul>
+    
+    <ul class="icons">
+        
+        <li><a href="https://twitter.com/yeqown" class="icon fa-twitter"><span class="label">Twitter</span></a></li>
+        
+        
+        
+        
+        
+        <li><a href="https://github.com/yeqown" class="icon fa-github"><span class="label">GitHub</span></a></li>
+        
+        
+        
+        
+        
+    </ul>
+    
+</nav>
+
+
+				
+					<div id="main">
+
+						
+                        <section class="post">
+                            <header class="major">
+                                
+                                <span class="date">January 13, 2018</span>
+                                
+                                <h1>持续集成-Jenkins</h1>
+                                <p>持续集成是一种软件开发实践，即团队开发成员经常集成它们的工作，通过每个成员每天至少集成一次，也就意味着每天可能会发生多次集成。每次集成都通过自动化的构建（包括编译，发布，自动化测试）来验证，从而尽早地发现集成错误。</p>
+                            </header>
+                            
+                            <p>持续集成是一种软件开发实践，即团队开发成员经常集成它们的工作，通过每个成员每天至少集成一次，也就意味着每天可能会发生多次集成。每次集成都通过自动化的构建（包括编译，发布，自动化测试）来验证，从而尽早地发现集成错误。</p>
+<!-- more -->
+<h3 id="关于持续集成">关于持续集成</h3>
+<blockquote>
+<p>要素</p>
+</blockquote>
+<p>. 统一的代码库
+. 自动构建
+. 自动测试
+. 每个人每天都要向代码库主干提交代码
+. 每次代码递交后都会在持续集成服务器上触发一次构建
+. 保证快速构建
+. 模拟生产环境的自动测试
+. 每个人都可以很容易的获取最新可执行的应用程序
+. 每个人都清楚正在发生的状况
+. 自动化的部署</p>
+<h3 id="jenkins的搭建与使用">Jenkins的搭建与使用：</h3>
+<blockquote>
+<p>前提：安装好Java环境</p>
+</blockquote>
+<p>. 下载参见<a href="https://jenkins.io/download/">下载地址</a>, 我采用的是<code>java -jar jenkins.war</code>的方式部署
+. 可能有用的教程 <a href="http://geek.csdn.net/news/detail/95824">http://geek.csdn.net/news/detail/95824</a></p>
+<h3 id="更改jenkins服务端口">更改jenkins服务端口</h3>
+<p>使用<code>java -jar jenkins.war</code>这样的命令来启动jenkins时会使用默认的端口8080，有些情况下8080端口已经被我们使用了，这个时候如果希望修改这个端口应该怎么办呢？</p>
+<p>在命令行后面添加 <code>--httpPort=8899</code>，其实就是配置jetty的启动端口。如下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">set JENKINS_HOME<span style="color:#f92672">=</span>./
+java -Djsse.enableSNIExtension<span style="color:#f92672">=</span>false -jar path/to/jenkins.war --httpPort<span style="color:#f92672">=</span>8899 
+</code></pre></div><h3 id="zsh设置jenkins环境变量">zsh设置Jenkins环境变量</h3>
+<pre><code>export JENKINS_HOME = &quot;your/jenkins/path&quot;
+</code></pre><h3 id="补充">补充</h3>
+<blockquote>
+<p>于2018-1-26日更新</p>
+</blockquote>
+<p>鉴于尝试了drone和docker, 强烈建议采用docker部署jenkins，或者替换Jenkins为<a href="http://drone.io">Drone</a></p>
+<h3 id="最后">最后</h3>
+<p>写得很简略，没有提供配置时候遇到的坑以及解决方法，遇到之后再补上。。。以上hahah</p>
+
+
+                            
+                            
+                            
+                            
+                            
+                        </section>
+
+					</div>
+
+                    
+
+<footer id="footer">
+    
+    <section>
+      <form method="post" action="post-action">
+        <div class="fields">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" name="name" id="name" />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="text" name="email" id="email" />
+          </div>
+          <div class="field">
+            <label for="message">Message</label>
+            <textarea name="message" id="message" rows="3"></textarea>
+          </div>
+        </div>
+        <ul class="actions">
+          <li><input type="submit" value='Send A Message' /></li>
+        </ul>
+      </form>
+    </section>
+    
+    <section class="split contact">
+        
+        <section class="alt">
+            <h3>Address</h3>
+            <p>
+                
+                     Chengdu · China
+                
+                     <br/>  This is a city that comes and doesn&#39;t want to go
+                
+            </p>
+        </section>
+        
+        
+        <section>
+            <h3>Phone</h3>
+            <p><a href="tel:no%20way">no way</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Email</h3>
+            <p><a href="mailto:yeqown@gmail.com">yeqown@gmail.com</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Social</h3>
+            <ul class="icons alt">
+                
+                <li><a href="https://twitter.com/yeqown" class="icon alt fa-twitter"><span class="label">Twitter</span></a></li>
+                
+                
+                
+                
+                
+                <li><a href="https://github.com/yeqown" class="icon alt fa-github"><span class="label">GitHub</span></a></li>
+                
+                
+                
+                
+                
+            </ul>
+        </section>
+        
+    </section>
+</footer>
+
+                    
+<div id="copyright">
+    <ul><li>&copy; Yeqown</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li><li>Hugo Port: <a href="https://curtistimson.co.uk">curttimson</a></li></ul>
+</div>
+
+
+            </div>
+            
+            
+
+
+
+
+
+
+
+
+
+
+<script src='/assets/js/bundle.js'></script>
+	</body>
+</html>

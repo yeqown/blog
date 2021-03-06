@@ -1,0 +1,339 @@
+<!DOCTYPE HTML>
+
+<html lang='en'>
+	<head>
+		<title>Golang适用的DTO工具 &middot; Yeqown</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		
+		
+		
+		<link rel="stylesheet" href="/assets/css/main.min.css">
+		
+		
+		<link rel="shortcut icon" href="favicon.ico">
+		
+		
+		<noscript><link rel="stylesheet" href='/assets/css/noscript.css' /></noscript>
+		<link rel="stylesheet" href="/highlight/styles/monokai-sublime.css">
+		
+		<script src="/highlight/highlight.pack.js"></script>
+		<script>hljs.initHighlightingOnLoad();</script>
+	</head>
+	<body lang='en' class="is-preload">
+
+		
+			<div id="wrapper">
+
+                
+<header id="header">
+    <a href='/' class="logo">Yeqown</a>
+</header>
+
+                
+
+<nav id="nav">
+    <ul class="links">
+        <li class="active"><a href='/'>Yeqown</a></li>
+        
+        <li><a href='/#footer'>Contact</a></li>
+        
+        
+    </ul>
+    
+    <ul class="icons">
+        
+        <li><a href="https://twitter.com/yeqown" class="icon fa-twitter"><span class="label">Twitter</span></a></li>
+        
+        
+        
+        
+        
+        <li><a href="https://github.com/yeqown" class="icon fa-github"><span class="label">GitHub</span></a></li>
+        
+        
+        
+        
+        
+    </ul>
+    
+</nav>
+
+
+				
+					<div id="main">
+
+						
+                        <section class="post">
+                            <header class="major">
+                                
+                                <span class="date">August 29, 2018</span>
+                                
+                                <h1>Golang适用的DTO工具</h1>
+                                <p>DTO (Data Transfer Object) 是Java中的概念，起到数据封装和隔离的作用。在使用Golang开发Web应用的过程中，也会有类似的需求。</p>
+                            </header>
+                            
+                            <blockquote>
+<p>DTO (Data Transfer Object) 是Java中的概念，起到数据封装和隔离的作用。在使用Golang开发Web应用的过程中，也会有类似的需求。先贴项目地址 <a href="https://github.com/yeqown/server-common/tree/master/dbs/tools">github.com/yeqown/server-common/tree/master/dbs/tools</a></p>
+</blockquote>
+<!-- more -->
+<h3 id="举个例子">举个例子</h3>
+<p>现在有一个用户数据结构如下,</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-Golang" data-lang="Golang"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">UserModel</span> <span style="color:#66d9ef">struct</span> {
+    <span style="color:#a6e22e">ID</span>          <span style="color:#66d9ef">int64</span>   <span style="color:#e6db74">`gorm:&#34;column:id&#34;`</span>
+    <span style="color:#a6e22e">Name</span>        <span style="color:#66d9ef">string</span>  <span style="color:#e6db74">`gorm:&#34;column:name&#34;`</span>
+    <span style="color:#a6e22e">Password</span>    <span style="color:#66d9ef">string</span>  <span style="color:#e6db74">`gorm:&#34;column:password&#34;`</span>
+}
+</code></pre></div><p>// 问题1: 现在要求是想要JSON格式返回用户数据，并且不希望其中包含有Password字段
+// 解决1:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-Golang" data-lang="Golang"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">UserModel</span> <span style="color:#66d9ef">struct</span> {
+    <span style="color:#a6e22e">ID</span>          <span style="color:#66d9ef">int64</span>   <span style="color:#e6db74">`gorm:&#34;column:id&#34; json:&#34;id&#34;`</span> 
+    <span style="color:#a6e22e">Name</span>        <span style="color:#66d9ef">string</span>  <span style="color:#e6db74">`gorm:&#34;column:name&#34; json:&#34;name&#34;`</span>
+    <span style="color:#a6e22e">Password</span>    <span style="color:#66d9ef">string</span>  <span style="color:#e6db74">`gorm:&#34;column:password&#34; json:&#34;-&#34;`</span>
+}
+</code></pre></div><p>// 问题2: 同样是JSON数据格式，并且希望额外返回用户的身份标示Ident（假设必须要跟用户数据放在一起）
+// 解决2: （这也是我的场景）</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-Golang" data-lang="Golang"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">UserDTO</span> <span style="color:#66d9ef">struct</span> {
+    <span style="color:#a6e22e">ID</span>          <span style="color:#66d9ef">int64</span>   <span style="color:#e6db74">`json:&#34;id&#34;`</span> 
+    <span style="color:#a6e22e">Name</span>        <span style="color:#66d9ef">string</span>  <span style="color:#e6db74">`json:&#34;name&#34;`</span>
+    <span style="color:#a6e22e">Password</span>    <span style="color:#66d9ef">string</span>  <span style="color:#e6db74">`json:&#34;-&#34;`</span>
+    <span style="color:#a6e22e">Ident</span>       <span style="color:#66d9ef">string</span>  <span style="color:#e6db74">`json:&#34;ident&#34;`</span>
+}
+
+<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">LoadUserDTOFromModel</span>(<span style="color:#a6e22e">data</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">UserMolde</span>) <span style="color:#f92672">*</span><span style="color:#a6e22e">UserDTO</span> {
+    <span style="color:#a6e22e">ident</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">genUserIdent</span>(<span style="color:#a6e22e">data</span>)
+    <span style="color:#66d9ef">return</span> <span style="color:#f92672">&amp;</span>{
+        <span style="color:#a6e22e">ID</span>          <span style="color:#a6e22e">data</span>.<span style="color:#a6e22e">ID</span>,
+        <span style="color:#a6e22e">Name</span>        <span style="color:#a6e22e">data</span>.<span style="color:#a6e22e">Name</span>,
+        <span style="color:#a6e22e">Ident</span>       <span style="color:#a6e22e">ident</span>,
+    }
+}
+</code></pre></div><h3 id="背景和需求">背景和需求</h3>
+<p>一般来说我的项目结构如下：其中models和services也就是分开定义Data struct(UserModel)和Object(UserDTO)的文件夹。</p>
+<p><img src="/images/dbtools-web-filetree.png" alt="Web项目结构举例"></p>
+<p>其实DTO的过程对于我来说，就是基于Data Struct生成一个新的Struct结构，并附带一个<code>func LoadDTOTypeFromModel(data *ModelType) *DTOType</code>。在这个过程中，其实除了个别Object结构体需要额外处理以外，大部分都是新换一个tag~。因此这部分工作步骤都是类似的，那么为什么不用一个工具来避免这部分重复的工作呢～？</p>
+<h3 id="思路">思路</h3>
+<p>先说一下思路:</p>
+<p>· 1. 从<code>.go</code>中获取到指定结构体的结构性描述
+· 2. 根据结构性描述来生成新的结构体
+· 3. 根据额外的配置，生成一个新的文件<code>types.go</code></p>
+<p>其中结构性描述如下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-Golang" data-lang="Golang"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">innerStruct</span> <span style="color:#66d9ef">struct</span> {
+    <span style="color:#a6e22e">fields</span>  []<span style="color:#f92672">*</span><span style="color:#a6e22e">field</span>
+    <span style="color:#a6e22e">content</span> <span style="color:#66d9ef">string</span>
+    <span style="color:#a6e22e">name</span>    <span style="color:#66d9ef">string</span>
+    <span style="color:#a6e22e">pkgName</span> <span style="color:#66d9ef">string</span>
+}
+
+<span style="color:#66d9ef">type</span> <span style="color:#a6e22e">field</span> <span style="color:#66d9ef">struct</span> {
+    <span style="color:#a6e22e">name</span> <span style="color:#66d9ef">string</span> <span style="color:#75715e">// field name string
+</span><span style="color:#75715e"></span>    <span style="color:#a6e22e">typ</span>  <span style="color:#66d9ef">string</span> <span style="color:#75715e">// field type string
+</span><span style="color:#75715e"></span>    <span style="color:#a6e22e">tag</span>  <span style="color:#66d9ef">string</span> <span style="color:#75715e">// tag name string
+</span><span style="color:#75715e"></span>}
+</code></pre></div><p>在整个流程中比较麻烦的就是，怎么获取到，特定类型结构体的结构性描述？<a href="#Go%E6%96%87%E4%BB%B6%E8%A7%A3%E6%9E%90%E9%83%A8%E5%88%86">Go文件解析部分</a>。这里想记录一个小插曲：最开始我找解析go文件方法的时候，在Google中搜索“如何解析go文件”，出来的结果没有太大帮助，然后我又尝试了“How to parse .go file source code”，结果就提示了<code>parser</code> &amp; <code>loader</code> 两个看起来就很有帮助的包名。。。。这里我选用了<code>loader</code>。</p>
+<h4 id="关于loader包的说明">关于loader包的说明</h4>
+<blockquote>
+<p>Package loader loads a complete Go program from source code, parsing and type-checking the initial packages plus their transitive closure of dependencies.</p>
+</blockquote>
+<p>正好这个包是从源代码去加载Go程序，对初始包进行解析和类型检查等。</p>
+<h3 id="go文件解析部分">Go文件解析部分</h3>
+<p>经过阅读loader包文档，我完成了一个函数用于获取指定的结构体的结构性描述信息：<a href="https://github.com/yeqown/server-common/blob/master/dbs/tools/parser.go#L65">代码在此</a></p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-Golang" data-lang="Golang"><span style="color:#75715e">// Exported, and specified type
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">loadGoFiles</span>(<span style="color:#a6e22e">dir</span> <span style="color:#66d9ef">string</span>, <span style="color:#a6e22e">filenames</span> <span style="color:#f92672">...</span><span style="color:#66d9ef">string</span>) ([]<span style="color:#f92672">*</span><span style="color:#a6e22e">innerStruct</span>, <span style="color:#66d9ef">error</span>) {
+    <span style="color:#a6e22e">newFilenames</span> <span style="color:#f92672">:=</span> []<span style="color:#66d9ef">string</span>{}
+
+    <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">filename</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">filenames</span> {
+        <span style="color:#a6e22e">newFilenames</span> = append(<span style="color:#a6e22e">newFilenames</span>, <span style="color:#a6e22e">path</span>.<span style="color:#a6e22e">Join</span>(<span style="color:#a6e22e">dir</span>, <span style="color:#a6e22e">filename</span>))
+    }
+
+    <span style="color:#a6e22e">conf</span>.<span style="color:#a6e22e">CreateFromFilenames</span>(<span style="color:#e6db74">&#34;&#34;</span>, <span style="color:#a6e22e">newFilenames</span><span style="color:#f92672">...</span>)
+    <span style="color:#a6e22e">prog</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">conf</span>.<span style="color:#a6e22e">Load</span>()
+    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+        <span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Println</span>(<span style="color:#e6db74">&#34;load program err:&#34;</span>, <span style="color:#a6e22e">err</span>)
+        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">err</span>
+    }
+
+    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">loopProgramCreated</span>(<span style="color:#a6e22e">prog</span>.<span style="color:#a6e22e">Created</span>), <span style="color:#66d9ef">nil</span>
+}
+
+<span style="color:#75715e">// loopProgramCreated to loo and filter:
+</span><span style="color:#75715e">// 1. unexported type
+</span><span style="color:#75715e">// 2. bultin types
+</span><span style="color:#75715e">// 3. only specified style struct name
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">loopProgramCreated</span>(
+    <span style="color:#a6e22e">created</span> []<span style="color:#f92672">*</span><span style="color:#a6e22e">loader</span>.<span style="color:#a6e22e">PackageInfo</span>,
+) (<span style="color:#a6e22e">innerStructs</span> []<span style="color:#f92672">*</span><span style="color:#a6e22e">innerStruct</span>) {
+
+    <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">pkgInfo</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">created</span> {
+        <span style="color:#a6e22e">pkgName</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">pkgInfo</span>.<span style="color:#a6e22e">Pkg</span>.<span style="color:#a6e22e">Name</span>()
+        <span style="color:#a6e22e">defs</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">pkgInfo</span>.<span style="color:#a6e22e">Defs</span>
+
+        <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">indent</span>, <span style="color:#a6e22e">obj</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">defs</span> {
+
+            <span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">indent</span>.<span style="color:#a6e22e">IsExported</span>() <span style="color:#f92672">||</span>
+                <span style="color:#a6e22e">obj</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> <span style="color:#f92672">||</span>
+                !<span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">HasSuffix</span>(<span style="color:#a6e22e">indent</span>.<span style="color:#a6e22e">Name</span>, <span style="color:#a6e22e">specifiedStructTypeSuffix</span>) {
+                <span style="color:#66d9ef">continue</span>
+            }
+            <span style="color:#75715e">// obj.String() 得到的string如：
+</span><span style="color:#75715e"></span>            <span style="color:#75715e">// type testdata.UserModel struct{Name string &#34;gorm:\&#34;colunm:name\&#34;&#34;; Password string &#34;gorm:\&#34;column:password\&#34;&#34;}
+</span><span style="color:#75715e"></span>            <span style="color:#a6e22e">is</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">parseStructString</span>(<span style="color:#a6e22e">obj</span>.<span style="color:#a6e22e">String</span>())
+            <span style="color:#a6e22e">is</span>.<span style="color:#a6e22e">pkgName</span> = <span style="color:#a6e22e">pkgName</span>
+            <span style="color:#a6e22e">is</span>.<span style="color:#a6e22e">pureName</span>()
+
+            <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">isDebug</span> {
+                <span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Println</span>(<span style="color:#e6db74">&#34;parse one Model: &#34;</span>, <span style="color:#a6e22e">is</span>.<span style="color:#a6e22e">name</span>, <span style="color:#a6e22e">is</span>.<span style="color:#a6e22e">pkgName</span>, <span style="color:#a6e22e">is</span>.<span style="color:#a6e22e">content</span>)
+            }
+
+            <span style="color:#a6e22e">innerStructs</span> = append(<span style="color:#a6e22e">innerStructs</span>, <span style="color:#a6e22e">is</span>)
+        }
+    }
+    <span style="color:#66d9ef">return</span>
+}
+</code></pre></div><p>其中<code>parseStructString</code>是对形如***type testdata.UserModel struct{Name string &ldquo;gorm:&quot;colunm:name&quot;&quot;; Password string &ldquo;gorm:&quot;column:password&quot;&quot;}***的字符串进行处理并整理成为<code>innerStruct</code>数据。</p>
+<h3 id="使用说明">使用说明</h3>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">go get github.com/yeqown/server-common/dbs/tools
+<span style="color:#75715e"># 获取 github.com/yeqown/server-common/tool.main.go, </span>
+<span style="color:#75715e"># 并选择性的实现自己的 CustomParseTagFunc &amp; CustomGenerateTagFunc</span>
+go build -o dbtools tool.main.go
+
+➜ ✗ dbtools -h
+Usage of ./dbtools:
+  -debug
+        调试模式开关，调试模式下会输出额外的信息
+  -dir string
+        指定需要解析的目录
+  -filename string
+        指定哪些文件需要被解析，如果未设置默认dir路径下所有的.go文件
+  -generateDir string
+        生成文件存放的目录，默认当前路径
+  -generateFilename string
+        生成文件名，默认<span style="color:#e6db74">&#34;types.go&#34;</span>
+  -generatePkgName string
+        生成文件的包名，默认<span style="color:#e6db74">&#34;types&#34;</span>
+  -generateStructSuffix string
+        替换model struct的后缀，默认无后缀，如UserSuffix <span style="color:#f92672">=</span>&gt; User
+  -modelImportPath string
+        指明model struct的导入路径, 如my-server/models
+  -modelStructSuffix string
+        指明特定后缀的model struct需要被解析，默认<span style="color:#e6db74">&#34;Model&#34;</span>
+</code></pre></div><h3 id="工具测试结果">工具测试结果</h3>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">./bin/dbtools <span style="color:#ae81ff">\
+</span><span style="color:#ae81ff"></span>-dir<span style="color:#f92672">=</span>./dbs/tools/testdata <span style="color:#ae81ff">\
+</span><span style="color:#ae81ff"></span>-filename<span style="color:#f92672">=</span>type_model.go <span style="color:#ae81ff">\
+</span><span style="color:#ae81ff"></span>-generatePkgName<span style="color:#f92672">=</span>main <span style="color:#ae81ff">\
+</span><span style="color:#ae81ff"></span>-modelImportPath<span style="color:#f92672">=</span>github.com/yeqown/server-common/dbs/tools/testdata <span style="color:#ae81ff">\
+</span></code></pre></div><p><img src="/images/dbtools-before-code.png" alt="type_model.go">
+<img src="/images/dbtools-after-types.png" alt="types.go"></p>
+<h3 id="参考链接">参考链接</h3>
+<ul>
+<li><a href="https://godoc.org/golang.org/x/tools/go/loader">loader</a></li>
+<li><a href="https://golang.org/pkg/go/parser/">parser</a></li>
+</ul>
+
+
+                            
+                            
+                            
+                            
+                            
+                        </section>
+
+					</div>
+
+                    
+
+<footer id="footer">
+    
+    <section>
+      <form method="post" action="post-action">
+        <div class="fields">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" name="name" id="name" />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="text" name="email" id="email" />
+          </div>
+          <div class="field">
+            <label for="message">Message</label>
+            <textarea name="message" id="message" rows="3"></textarea>
+          </div>
+        </div>
+        <ul class="actions">
+          <li><input type="submit" value='Send A Message' /></li>
+        </ul>
+      </form>
+    </section>
+    
+    <section class="split contact">
+        
+        <section class="alt">
+            <h3>Address</h3>
+            <p>
+                
+                     Chengdu · China
+                
+                     <br/>  This is a city that comes and doesn&#39;t want to go
+                
+            </p>
+        </section>
+        
+        
+        <section>
+            <h3>Phone</h3>
+            <p><a href="tel:no%20way">no way</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Email</h3>
+            <p><a href="mailto:yeqown@gmail.com">yeqown@gmail.com</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Social</h3>
+            <ul class="icons alt">
+                
+                <li><a href="https://twitter.com/yeqown" class="icon alt fa-twitter"><span class="label">Twitter</span></a></li>
+                
+                
+                
+                
+                
+                <li><a href="https://github.com/yeqown" class="icon alt fa-github"><span class="label">GitHub</span></a></li>
+                
+                
+                
+                
+                
+            </ul>
+        </section>
+        
+    </section>
+</footer>
+
+                    
+<div id="copyright">
+    <ul><li>&copy; Yeqown</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li><li>Hugo Port: <a href="https://curtistimson.co.uk">curttimson</a></li></ul>
+</div>
+
+
+            </div>
+            
+            
+
+
+
+
+
+
+
+
+
+
+<script src='/assets/js/bundle.js'></script>
+	</body>
+</html>

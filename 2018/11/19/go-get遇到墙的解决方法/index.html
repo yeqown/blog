@@ -1,0 +1,214 @@
+<!DOCTYPE HTML>
+
+<html lang='en'>
+	<head>
+		<title>go-get遇到🧱的解决方法 &middot; Yeqown</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		
+		
+		
+		<link rel="stylesheet" href="/assets/css/main.min.css">
+		
+		
+		<link rel="shortcut icon" href="favicon.ico">
+		
+		
+		<noscript><link rel="stylesheet" href='/assets/css/noscript.css' /></noscript>
+		<link rel="stylesheet" href="/highlight/styles/monokai-sublime.css">
+		
+		<script src="/highlight/highlight.pack.js"></script>
+		<script>hljs.initHighlightingOnLoad();</script>
+	</head>
+	<body lang='en' class="is-preload">
+
+		
+			<div id="wrapper">
+
+                
+<header id="header">
+    <a href='/' class="logo">Yeqown</a>
+</header>
+
+                
+
+<nav id="nav">
+    <ul class="links">
+        <li class="active"><a href='/'>Yeqown</a></li>
+        
+        <li><a href='/#footer'>Contact</a></li>
+        
+        
+    </ul>
+    
+    <ul class="icons">
+        
+        <li><a href="https://twitter.com/yeqown" class="icon fa-twitter"><span class="label">Twitter</span></a></li>
+        
+        
+        
+        
+        
+        <li><a href="https://github.com/yeqown" class="icon fa-github"><span class="label">GitHub</span></a></li>
+        
+        
+        
+        
+        
+    </ul>
+    
+</nav>
+
+
+				
+					<div id="main">
+
+						
+                        <section class="post">
+                            <header class="major">
+                                
+                                <span class="date">November 19, 2018</span>
+                                
+                                <h1>go-get遇到🧱的解决方法</h1>
+                                <p>解决方法有两种</p>
+                            </header>
+                            
+                            <p>解决方法有两种，在网上也很好找到：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">1. 最简单的，从¥“github.com/golang”找到对应的包并下载到 $GOPATH/src/golang.org/x/ 下
+2. 第二种，就是翻过🧱了。
+</code></pre></div><h3 id="1-问题翻了还是没办法直接使用go-get来下载呢">1 问题：翻了🧱，还是没办法直接使用go get来下载呢？</h3>
+<p>先说原因，因为go get并没有走你的代理啊！！！！那么如何设置代理呢？</p>
+<!-- more -->
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">export http_proxy<span style="color:#f92672">=</span>http://ip:port
+go get golang.org/xxx
+</code></pre></div><p>其他设置代理的方式，自行参见 <a href="##%E5%8F%82%E8%80%83">参考</a></p>
+<h3 id="2-如果你的代理不支持http--https协议可咋整">2 如果你的代理不支持http || https协议，可咋整？</h3>
+<p>那么想办法支持http或者把http再代理到你可以使用的协议（socks5~），那么可以使用<a href="https://github.com/cyfdecyf/cow">cow</a>。</p>
+<p>cow 推荐使用方式：</p>
+<p>go get 下载安装（因为刚开始图简单，使用程序的时候运行报错了，go get 安装方式并不会有这样的困扰）。
+配置的时候也很简单，编辑配置文件 ～/.cow/rc，配置http socks5代理服务和监听代理端口。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">listen <span style="color:#f92672">=</span> http://127.0.0.1:7777
+proxy <span style="color:#f92672">=</span> socks5://127.0.0.1:1080
+</code></pre></div><h3 id="3-运行">3 运行</h3>
+<p>配置完成之后就可以直接运行了</p>
+<pre><code>    ./cow
+    # 另开一个Terminal
+    export http_proxy=http://ip:port
+    go get golang.org/xxx
+</code></pre><h3 id="写在后面">写在后面</h3>
+<p>知道了go get无法翻🧱的原因之后，就可以发挥自己的想象力来解决问题了，这样解决还是挺繁琐的。虽然cow可以配置开机启动，但对于一个懒癌晚期）的人来说（如果不是因为升级Go到了1.11，go-module机制让我无法开心的玩耍，我也不会去考虑为啥翻🧱了go get还是不能用，明明有代理却还有使用另外一个代理～。</p>
+<p>友情提示：vscode-go 也可以设置proxy哦</p>
+<h3 id="参考">参考：</h3>
+<ul>
+<li><a href="https://blog.csdn.net/zhyhang/article/details/78444974">go get 使用代理</a></li>
+<li><a href="https://github.com/cyfdecyf/cow">cow</a></li>
+<li><a href="https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc">cow配置文件说明</a></li>
+<li><a href="https://blog.csdn.net/easy_mind/article/details/78214696">vscode-go设置proxy</a></li>
+</ul>
+
+
+                            
+                            
+                            
+                            
+                            
+                        </section>
+
+					</div>
+
+                    
+
+<footer id="footer">
+    
+    <section>
+      <form method="post" action="post-action">
+        <div class="fields">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" name="name" id="name" />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="text" name="email" id="email" />
+          </div>
+          <div class="field">
+            <label for="message">Message</label>
+            <textarea name="message" id="message" rows="3"></textarea>
+          </div>
+        </div>
+        <ul class="actions">
+          <li><input type="submit" value='Send A Message' /></li>
+        </ul>
+      </form>
+    </section>
+    
+    <section class="split contact">
+        
+        <section class="alt">
+            <h3>Address</h3>
+            <p>
+                
+                     Chengdu · China
+                
+                     <br/>  This is a city that comes and doesn&#39;t want to go
+                
+            </p>
+        </section>
+        
+        
+        <section>
+            <h3>Phone</h3>
+            <p><a href="tel:no%20way">no way</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Email</h3>
+            <p><a href="mailto:yeqown@gmail.com">yeqown@gmail.com</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Social</h3>
+            <ul class="icons alt">
+                
+                <li><a href="https://twitter.com/yeqown" class="icon alt fa-twitter"><span class="label">Twitter</span></a></li>
+                
+                
+                
+                
+                
+                <li><a href="https://github.com/yeqown" class="icon alt fa-github"><span class="label">GitHub</span></a></li>
+                
+                
+                
+                
+                
+            </ul>
+        </section>
+        
+    </section>
+</footer>
+
+                    
+<div id="copyright">
+    <ul><li>&copy; Yeqown</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li><li>Hugo Port: <a href="https://curtistimson.co.uk">curttimson</a></li></ul>
+</div>
+
+
+            </div>
+            
+            
+
+
+
+
+
+
+
+
+
+
+<script src='/assets/js/bundle.js'></script>
+	</body>
+</html>

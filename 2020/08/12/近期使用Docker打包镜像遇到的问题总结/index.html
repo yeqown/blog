@@ -1,0 +1,247 @@
+<!DOCTYPE HTML>
+
+<html lang='en'>
+	<head>
+		<title>近期使用Docker打包镜像遇到的问题总结 &middot; Yeqown</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		
+		
+		
+		<link rel="stylesheet" href="/assets/css/main.min.css">
+		
+		
+		<link rel="shortcut icon" href="favicon.ico">
+		
+		
+		<noscript><link rel="stylesheet" href='/assets/css/noscript.css' /></noscript>
+		<link rel="stylesheet" href="/highlight/styles/monokai-sublime.css">
+		
+		<script src="/highlight/highlight.pack.js"></script>
+		<script>hljs.initHighlightingOnLoad();</script>
+	</head>
+	<body lang='en' class="is-preload">
+
+		
+			<div id="wrapper">
+
+                
+<header id="header">
+    <a href='/' class="logo">Yeqown</a>
+</header>
+
+                
+
+<nav id="nav">
+    <ul class="links">
+        <li class="active"><a href='/'>Yeqown</a></li>
+        
+        <li><a href='/#footer'>Contact</a></li>
+        
+        
+    </ul>
+    
+    <ul class="icons">
+        
+        <li><a href="https://twitter.com/yeqown" class="icon fa-twitter"><span class="label">Twitter</span></a></li>
+        
+        
+        
+        
+        
+        <li><a href="https://github.com/yeqown" class="icon fa-github"><span class="label">GitHub</span></a></li>
+        
+        
+        
+        
+        
+    </ul>
+    
+</nav>
+
+
+				
+					<div id="main">
+
+						
+                        <section class="post">
+                            <header class="major">
+                                
+                                <span class="date">August 12, 2020</span>
+                                
+                                <h1>近期使用Docker打包镜像遇到的问题总结</h1>
+                                <p>总结最近使用docker遇到的问题和解决办法。</p>
+                            </header>
+                            
+                            <h3 id="背景">背景</h3>
+<p>在 <a href="https://github.com/yeqown/goreportcard">github.com/yeqown/goreportcard</a> 项目中我改造了 <code>goreportcard</code>。
+后续为了方便部署，我准备将其打包成为docker镜像并上传到 <code>DockerHub</code>。期间遇到了下面的问题，并一一解决，这里做一个记录帮助以后遇到类似的问题可以快速解决。</p>
+<p>初期的目标是：将<code>goreportcard</code>和<code>golangci-lint</code>编译好，尽可能较小镜像的体积。因此第一次尝试，我使用了分阶段编译，用<code>golang:1.14.1</code>编译，<code>alpine</code>来发布。</p>
+<p>基本 Dockerfile 如下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-Dockerfile" data-lang="Dockerfile"><span style="color:#75715e"># building stage</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">FROM</span><span style="color:#e6db74"> golang:1.14-alpine3.11 as build</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">WORKDIR</span><span style="color:#e6db74"> /tmp/build</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">COPY</span> . .<span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">RUN</span> export GOPROXY<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;https://goproxy.cn,direct&#34;</span> <span style="color:#ae81ff">\
+</span><span style="color:#ae81ff"></span>    <span style="color:#f92672">&amp;&amp;</span> go mod download <span style="color:#ae81ff">\
+</span><span style="color:#ae81ff"></span>    <span style="color:#f92672">&amp;&amp;</span> go build -o app ./cmd/goreportcard-cli/ <span style="color:#ae81ff">\
+</span><span style="color:#ae81ff"></span>    <span style="color:#f92672">&amp;&amp;</span> go get github.com/golangci/golangci-lint <span style="color:#f92672">&amp;&amp;</span> go install github.com/golangci/golangci-lint/cmd/golangci-lint<span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#75715e"># release stage</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">FROM</span><span style="color:#e6db74"> golang:1.14-alpine3.11 as release</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">WORKDIR</span><span style="color:#e6db74"> /app/goreportcard</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">COPY</span> --from<span style="color:#f92672">=</span>build /tmp/build/app .<span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">COPY</span> --from<span style="color:#f92672">=</span>build /tmp/build/tpl ./tpl<span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">COPY</span> --from<span style="color:#f92672">=</span>build /tmp/build/assets ./assets<span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#75715e"># FIXED: 不能使用golangci-lint, `File not found` 错误</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">COPY</span> --from<span style="color:#f92672">=</span>build /go/bin/golangci-lint /usr/local/bin<span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">EXPOSE</span><span style="color:#e6db74"> 8000</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010">
+</span><span style="color:#960050;background-color:#1e0010"></span><span style="color:#66d9ef">ENTRYPOINT</span> [<span style="color:#e6db74">&#34;./app&#34;</span>, <span style="color:#e6db74">&#34;start-web&#34;</span>, <span style="color:#e6db74">&#34;&amp;&#34;</span>]<span style="color:#960050;background-color:#1e0010">
+</span></code></pre></div><h3 id="问题清单和解决方案">问题清单和解决方案</h3>
+<blockquote>
+<p>由于并不是所有的问题都和Docker有关，因此我会使用 <code>[分类]</code> 在标题上注明。</p>
+</blockquote>
+<h4 id="0-如何调试docker打包过程-docker">0. 如何调试Docker打包过程 <code>[Docker]</code></h4>
+<p>在Docker打包过程中会有如下字样，其中<code>---&gt; 5d5cac8457ad</code> 字样就是一个可以运行的镜像，因此我们可以尝试运行这个镜像来获取我们想要的信息，
+而不用在 <code>Dockerfile</code> 中通过 <code>echo</code> 来Debug🐶。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">docker build -t goreportcard:v1.0.0 .
+Sending build context to Docker daemon  12.08MB
+Step 1/13 : FROM golang:1.14-alpine3.11 as build
+ ---&gt; 5d5cac8457ad
+Step 2/13 : WORKDIR /tmp/build
+ ---&gt; Using cache
+ ---&gt; c57b9255d5fb
+Step 3/13 : COPY . .
+</code></pre></div><p>运行打包过程中的镜像</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">docker run -it c57b9255d5fb
+</code></pre></div><h4 id="1-golangci-lint-编译好后复制到-alpine中无法运行go">1 golangci-lint 编译好后复制到 alpine中无法运行？<code>[Go]</code></h4>
+<p>遇到这个问题的时候，提示错误信息大致为<code>File or Path not found</code>，但同时 <code>goreportcard</code> 是可以运行，这两者是在相同地环境下编译出来的。
+因此肯定是编译的时候存在差异，初步判断为<code>CGO_ENABLED，GOOS，GOARCH</code>三个变量，通过搜索和尝试最终统一增加这三个环境变量解决问题。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">    <span style="color:#f92672">&amp;&amp;</span> export CGO_ENABLED<span style="color:#f92672">=</span><span style="color:#ae81ff">0</span> <span style="color:#ae81ff">\
+</span><span style="color:#ae81ff"></span>    <span style="color:#f92672">&amp;&amp;</span> export GOARCH<span style="color:#f92672">=</span>amd64 <span style="color:#ae81ff">\
+</span><span style="color:#ae81ff"></span>    <span style="color:#f92672">&amp;&amp;</span> export GOOS<span style="color:#f92672">=</span>linux <span style="color:#ae81ff">\
+</span></code></pre></div><h4 id="2-golangci-lint-需要go可执行文件-go">2. golangci-lint 需要<code>Go</code>可执行文件? <code>[Go]</code></h4>
+<p>// TODO:</p>
+<h4 id="3-go-get-需要-git--ssh-客户端-go">3. <code>go get</code> 需要 <code>git</code> / <code>ssh</code> 客户端？ <code>[Go]</code></h4>
+<p>// TODO:</p>
+<h4 id="4-在-alpine-中如何安装预编译好的软件如git-docker">4. 在 alpine 中如何安装预编译好的软件，如git？ <code>[Docker]</code></h4>
+<p>这个是在<code>git</code>的 <a href="https://git-scm.com/download/linux">linux安装帮助</a> 里找到的😂，也不知道为啥，只能夸下<code>git</code>可真专业</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">apk add git
+</code></pre></div><h4 id="5-在-alpine-中安装软件特别慢如何解决--docker">5. 在 alpine 中安装软件特别慢，如何解决？  <code>[Docker]</code></h4>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">sed -i <span style="color:#e6db74">&#39;s/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g&#39;</span> /etc/apk/repositories
+</code></pre></div><h4 id="6-镜像中-go-get-怎么使用宿主的缓存--godocker">6. 镜像中 <code>go get</code> 怎么使用宿主的缓存？  <code>[Go+Docker]</code></h4>
+<p>把宿主机的 <code>path/go/pkg</code> 挂载到 <code>/go/pkg</code>，这里默认使用的是go的容器镜像。</p>
+<h4 id="7-could-not-import-c-no-metadata-for-c-go">7. could not import C (no metadata for C) <code>[Go]</code></h4>
+<p><a href="https://github.com/golangci/golangci-lint/issues/602">https://github.com/golangci/golangci-lint/issues/602</a></p>
+
+
+                            
+                            
+                            
+                            
+                            
+                        </section>
+
+					</div>
+
+                    
+
+<footer id="footer">
+    
+    <section>
+      <form method="post" action="post-action">
+        <div class="fields">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" name="name" id="name" />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="text" name="email" id="email" />
+          </div>
+          <div class="field">
+            <label for="message">Message</label>
+            <textarea name="message" id="message" rows="3"></textarea>
+          </div>
+        </div>
+        <ul class="actions">
+          <li><input type="submit" value='Send A Message' /></li>
+        </ul>
+      </form>
+    </section>
+    
+    <section class="split contact">
+        
+        <section class="alt">
+            <h3>Address</h3>
+            <p>
+                
+                     Chengdu · China
+                
+                     <br/>  This is a city that comes and doesn&#39;t want to go
+                
+            </p>
+        </section>
+        
+        
+        <section>
+            <h3>Phone</h3>
+            <p><a href="tel:no%20way">no way</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Email</h3>
+            <p><a href="mailto:yeqown@gmail.com">yeqown@gmail.com</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Social</h3>
+            <ul class="icons alt">
+                
+                <li><a href="https://twitter.com/yeqown" class="icon alt fa-twitter"><span class="label">Twitter</span></a></li>
+                
+                
+                
+                
+                
+                <li><a href="https://github.com/yeqown" class="icon alt fa-github"><span class="label">GitHub</span></a></li>
+                
+                
+                
+                
+                
+            </ul>
+        </section>
+        
+    </section>
+</footer>
+
+                    
+<div id="copyright">
+    <ul><li>&copy; Yeqown</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li><li>Hugo Port: <a href="https://curtistimson.co.uk">curttimson</a></li></ul>
+</div>
+
+
+            </div>
+            
+            
+
+
+
+
+
+
+
+
+
+
+<script src='/assets/js/bundle.js'></script>
+	</body>
+</html>

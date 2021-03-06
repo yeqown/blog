@@ -1,0 +1,578 @@
+<!DOCTYPE HTML>
+
+<html lang='en'>
+	<head>
+		<title>Channel in Go小结 &middot; Yeqown</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		
+		
+		
+		<link rel="stylesheet" href="/assets/css/main.min.css">
+		
+		
+		<link rel="shortcut icon" href="favicon.ico">
+		
+		
+		<noscript><link rel="stylesheet" href='/assets/css/noscript.css' /></noscript>
+		<link rel="stylesheet" href="/highlight/styles/monokai-sublime.css">
+		
+		<script src="/highlight/highlight.pack.js"></script>
+		<script>hljs.initHighlightingOnLoad();</script>
+	</head>
+	<body lang='en' class="is-preload">
+
+		
+			<div id="wrapper">
+
+                
+<header id="header">
+    <a href='/' class="logo">Yeqown</a>
+</header>
+
+                
+
+<nav id="nav">
+    <ul class="links">
+        <li class="active"><a href='/'>Yeqown</a></li>
+        
+        <li><a href='/#footer'>Contact</a></li>
+        
+        
+    </ul>
+    
+    <ul class="icons">
+        
+        <li><a href="https://twitter.com/yeqown" class="icon fa-twitter"><span class="label">Twitter</span></a></li>
+        
+        
+        
+        
+        
+        <li><a href="https://github.com/yeqown" class="icon fa-github"><span class="label">GitHub</span></a></li>
+        
+        
+        
+        
+        
+    </ul>
+    
+</nav>
+
+
+				
+					<div id="main">
+
+						
+                        <section class="post">
+                            <header class="major">
+                                
+                                <span class="date">April 13, 2020</span>
+                                
+                                <h1>Channel in Go小结</h1>
+                                <p>channel是Go区别于其他语言的一大特色，让程序员们在goroutine的并发基础上，采用简单易理解的通信手段</p>
+                            </header>
+                            
+                            <p>在其他编程语言中，如果想要在线程中通信，最常用的手段是共享内存。然而考虑到线程冲突问题，不得不考虑加锁，以保证并发安全，加锁也一定会带来额外的开销，对性能产生影响。</p>
+<h3 id="csp模型">CSP模型</h3>
+<blockquote>
+<p>在 Go 语言中也能使用共享内存加互斥锁进行通信，但是 Go 语言提供了一种不同的并发模型，也就是通信顺序进程（Communicating sequential processes，CSP）1。Goroutine 和 Channel 分别对应 CSP 中的实体和传递信息的媒介，Go 语言中的 Goroutine 会通过 Channel 传递数据。</p>
+</blockquote>
+<h3 id="使用示例">使用示例</h3>
+<p>在使用之前，需要对channel有个整体的印象：</p>
+<ul>
+<li>FIFO (First In First Out)</li>
+<li>分为有缓冲和无缓冲两种</li>
+<li>在使用过程中会阻塞（无缓冲时，只操作读或写；有缓冲已满时，只操作读或者写）</li>
+<li>接受者和发送者都是goroutine</li>
+</ul>
+<p>参考下图：</p>
+<image src="/images/channel-overview.svg"/>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+    <span style="color:#75715e">// Q: 有缓冲和无缓冲在使用上有什么区别？
+</span><span style="color:#75715e"></span>    <span style="color:#75715e">// ch := make(chan int) // 无缓冲
+</span><span style="color:#75715e"></span>    <span style="color:#a6e22e">ch</span> <span style="color:#f92672">:=</span> make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>, <span style="color:#ae81ff">1</span>) <span style="color:#75715e">// 有缓冲，大小为1
+</span><span style="color:#75715e"></span>
+    <span style="color:#75715e">// 发送
+</span><span style="color:#75715e"></span>    <span style="color:#a6e22e">ch</span> <span style="color:#f92672">&lt;-</span> <span style="color:#ae81ff">1</span>
+
+    <span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Println</span>(<span style="color:#f92672">&lt;-</span><span style="color:#a6e22e">ch</span>)
+}
+</code></pre></div><h4 id="注意事项">注意事项</h4>
+<p>在使用channel时，需要注意一下事项：</p>
+<table>
+<thead>
+<tr>
+<th>操作\CH状态</th>
+<th>ch为空</th>
+<th>ch已关闭</th>
+<th>ch正常</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>发送 ch &lt;-</td>
+<td>死锁</td>
+<td>panic</td>
+<td>成功或阻塞</td>
+</tr>
+<tr>
+<td>接收 &lt;-ch</td>
+<td>死锁</td>
+<td>成功或空值</td>
+<td>成功或阻塞</td>
+</tr>
+<tr>
+<td>关闭 close(ch)</td>
+<td>panic</td>
+<td>panic</td>
+<td>成功</td>
+</tr>
+</tbody>
+</table>
+<p>Q: 这里考虑下如何优雅的关闭channel (避免panic)?</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#75715e">// A: 代码上从发送端控制channel的关闭，同时为了避免重复关闭，使用sync.Once来协助。
+</span><span style="color:#75715e">// create
+</span><span style="color:#75715e"></span><span style="color:#a6e22e">ch</span> <span style="color:#f92672">:=</span> make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>, <span style="color:#ae81ff">233</span>)
+<span style="color:#75715e">// sending
+</span><span style="color:#75715e"></span><span style="color:#a6e22e">ch</span> <span style="color:#f92672">&lt;-</span> <span style="color:#ae81ff">1</span>
+<span style="color:#75715e">// close from sender
+</span><span style="color:#75715e"></span><span style="color:#a6e22e">once</span>.<span style="color:#a6e22e">Do</span>(close(<span style="color:#a6e22e">ch</span>))
+</code></pre></div><h3 id="make-详解">Make 详解</h3>
+<p>channel通过make关键字创建，并分配缓冲区大小。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#75715e">// runtime/chan.go#makechan
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">makechan</span>(<span style="color:#a6e22e">t</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">chantype</span>, <span style="color:#a6e22e">size</span> <span style="color:#66d9ef">int</span>) <span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span> {
+	<span style="color:#a6e22e">elem</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">t</span>.<span style="color:#a6e22e">elem</span>
+    <span style="color:#75715e">// ...
+</span><span style="color:#75715e"></span>
+    <span style="color:#75715e">// elem.size * size 是否溢出
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">mem</span>, <span style="color:#a6e22e">overflow</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">math</span>.<span style="color:#a6e22e">MulUintptr</span>(<span style="color:#a6e22e">elem</span>.<span style="color:#a6e22e">size</span>, uintptr(<span style="color:#a6e22e">size</span>))
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">overflow</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">mem</span> &gt; <span style="color:#a6e22e">maxAlloc</span><span style="color:#f92672">-</span><span style="color:#a6e22e">hchanSize</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">size</span> &lt; <span style="color:#ae81ff">0</span> {
+		panic(<span style="color:#a6e22e">plainError</span>(<span style="color:#e6db74">&#34;makechan: size out of range&#34;</span>))
+	}
+
+	<span style="color:#75715e">// Hchan does not contain pointers interesting for GC when elements stored in buf do not contain pointers.
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">// buf points into the same allocation, elemtype is persistent.
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">// SudoG&#39;s are referenced from their owning thread so they can&#39;t be collected.
+</span><span style="color:#75715e"></span>    <span style="color:#75715e">// TODO(dvyukov,rlh): Rethink when collector can move allocated objects.
+</span><span style="color:#75715e"></span>    <span style="color:#75715e">// 大意是是说，当存储在buf的元素中不包含指针时，gc对此不感兴趣？（留坑）因此才会将buf和hchan分配在同一片内存空间。
+</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>
+	<span style="color:#66d9ef">switch</span> {
+	<span style="color:#66d9ef">case</span> <span style="color:#a6e22e">mem</span> <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>:
+		<span style="color:#75715e">// 无缓冲（只分配hchan）
+</span><span style="color:#75715e"></span>		<span style="color:#a6e22e">c</span> = (<span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>)(<span style="color:#a6e22e">mallocgc</span>(<span style="color:#a6e22e">hchanSize</span>, <span style="color:#66d9ef">nil</span>, <span style="color:#66d9ef">true</span>))
+		<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">buf</span> = <span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">raceaddr</span>()
+	<span style="color:#66d9ef">case</span> <span style="color:#a6e22e">elem</span>.<span style="color:#a6e22e">ptrdata</span> <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>:
+		<span style="color:#75715e">// 不含指针（hchan和缓冲区在一起）
+</span><span style="color:#75715e"></span>        <span style="color:#a6e22e">c</span> = (<span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>)(<span style="color:#a6e22e">mallocgc</span>(<span style="color:#a6e22e">hchanSize</span><span style="color:#f92672">+</span><span style="color:#a6e22e">mem</span>, <span style="color:#66d9ef">nil</span>, <span style="color:#66d9ef">true</span>))
+        <span style="color:#75715e">// buf的起始地址 = 基地址 + hchan结构体大小偏移量
+</span><span style="color:#75715e"></span>		<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">buf</span> = <span style="color:#a6e22e">add</span>(<span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#a6e22e">c</span>), <span style="color:#a6e22e">hchanSize</span>)
+	<span style="color:#66d9ef">default</span>:
+		<span style="color:#75715e">// 有缓冲，含指针（hchan和缓冲区不在一起）
+</span><span style="color:#75715e"></span>		<span style="color:#a6e22e">c</span> = new(<span style="color:#a6e22e">hchan</span>)
+		<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">buf</span> = <span style="color:#a6e22e">mallocgc</span>(<span style="color:#a6e22e">mem</span>, <span style="color:#a6e22e">elem</span>, <span style="color:#66d9ef">true</span>)
+	}
+
+	<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">elemsize</span> = uint16(<span style="color:#a6e22e">elem</span>.<span style="color:#a6e22e">size</span>)
+	<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">elemtype</span> = <span style="color:#a6e22e">elem</span>
+	<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">dataqsiz</span> = uint(<span style="color:#a6e22e">size</span>)
+    <span style="color:#75715e">// ...
+</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">c</span>
+}
+</code></pre></div><h3 id="close-详解">Close 详解</h3>
+<p><code>close(ch)</code> 可以关闭channel。已经关闭的channel不可以发送，也不能再被关闭，但是还能接收。如果缓冲数据被处理完那么会接受到空值。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#75715e">// runtime/chan.go#closechan
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">closechan</span>(<span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>) {
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">c</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+		<span style="color:#75715e">// 如果channel为空，则会触发panic
+</span><span style="color:#75715e"></span>		panic(<span style="color:#a6e22e">plainError</span>(<span style="color:#e6db74">&#34;close of nil channel&#34;</span>))
+	}
+
+	<span style="color:#a6e22e">lock</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">lock</span>)
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">closed</span> <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span> {
+		<span style="color:#75715e">// 关闭已经关闭的channel，也会触发panic
+</span><span style="color:#75715e"></span>		<span style="color:#a6e22e">unlock</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">lock</span>)
+		panic(<span style="color:#a6e22e">plainError</span>(<span style="color:#e6db74">&#34;close of closed channel&#34;</span>))
+	}
+
+	<span style="color:#75715e">// ...
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">// 设置已关闭标志位
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">closed</span> = <span style="color:#ae81ff">1</span>
+
+	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">glist</span> <span style="color:#a6e22e">gList</span>
+
+	<span style="color:#75715e">// 释放所有的recvq中的g
+</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> {
+		<span style="color:#a6e22e">sg</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">recvq</span>.<span style="color:#a6e22e">dequeue</span>()
+		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">sg</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+			<span style="color:#66d9ef">break</span>
+		}
+		<span style="color:#75715e">// 清空数据
+</span><span style="color:#75715e"></span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">sg</span>.<span style="color:#a6e22e">elem</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+			<span style="color:#a6e22e">typedmemclr</span>(<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">elemtype</span>, <span style="color:#a6e22e">sg</span>.<span style="color:#a6e22e">elem</span>)
+			<span style="color:#a6e22e">sg</span>.<span style="color:#a6e22e">elem</span> = <span style="color:#66d9ef">nil</span>
+		}
+		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">sg</span>.<span style="color:#a6e22e">releasetime</span> <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span> {
+			<span style="color:#a6e22e">sg</span>.<span style="color:#a6e22e">releasetime</span> = <span style="color:#a6e22e">cputicks</span>()
+		}
+		<span style="color:#a6e22e">gp</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">sg</span>.<span style="color:#a6e22e">g</span>
+		<span style="color:#a6e22e">gp</span>.<span style="color:#a6e22e">param</span> = <span style="color:#66d9ef">nil</span>
+		<span style="color:#75715e">// ...
+</span><span style="color:#75715e"></span>		<span style="color:#a6e22e">glist</span>.<span style="color:#a6e22e">push</span>(<span style="color:#a6e22e">gp</span>)
+	}
+
+	<span style="color:#75715e">// 释放所有的sendq中的g
+</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> {
+		<span style="color:#75715e">// ... 与接受者处理类似
+</span><span style="color:#75715e"></span>	}
+	<span style="color:#a6e22e">unlock</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">lock</span>)
+
+	<span style="color:#75715e">// 让所有的读/写g就绪
+</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> !<span style="color:#a6e22e">glist</span>.<span style="color:#a6e22e">empty</span>() {
+		<span style="color:#a6e22e">gp</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">glist</span>.<span style="color:#a6e22e">pop</span>()
+		<span style="color:#a6e22e">gp</span>.<span style="color:#a6e22e">schedlink</span> = <span style="color:#ae81ff">0</span>
+		<span style="color:#a6e22e">goready</span>(<span style="color:#a6e22e">gp</span>, <span style="color:#ae81ff">3</span>)
+	}
+}
+</code></pre></div><h3 id="send-详解">Send 详解</h3>
+<p>向channel发送最常见的就是如下2种方式：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#75715e">// case 1
+</span><span style="color:#75715e"></span><span style="color:#a6e22e">ch</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">val</span>
+
+<span style="color:#75715e">// case 2 
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">select</span> {
+    <span style="color:#66d9ef">case</span> <span style="color:#a6e22e">ch</span> <span style="color:#f92672">&lt;-</span> <span style="color:#ae81ff">2</span>:
+        <span style="color:#75715e">// foo
+</span><span style="color:#75715e"></span>    <span style="color:#66d9ef">default</span>:
+        <span style="color:#75715e">// bar
+</span><span style="color:#75715e"></span>}
+</code></pre></div><p>在编译时都会被变成成调用<code>func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool</code>的函数，但是两者在对block的赋值上并不相同，如下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#75715e">// case 1
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">chansend1</span>(<span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>, <span style="color:#a6e22e">elem</span> <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>) {
+	<span style="color:#a6e22e">chansend</span>(<span style="color:#a6e22e">c</span>, <span style="color:#a6e22e">elem</span>, <span style="color:#66d9ef">true</span>, <span style="color:#a6e22e">getcallerpc</span>())
+}
+
+<span style="color:#75715e">// case 2
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">selectnbsend</span>(<span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>, <span style="color:#a6e22e">elem</span> <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>) (<span style="color:#a6e22e">selected</span> <span style="color:#66d9ef">bool</span>) {
+	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">chansend</span>(<span style="color:#a6e22e">c</span>, <span style="color:#a6e22e">elem</span>, <span style="color:#66d9ef">false</span>, <span style="color:#a6e22e">getcallerpc</span>())
+}
+</code></pre></div><p>也就是说在case2中，channel发送并不会阻塞当前的goroutine，就算是无缓冲，或者缓冲已满的情况。</p>
+<p>发送期间处理流程，如下图：</p>
+<image src="/images/channel-send.svg"/>
+<h3 id="recv-详解">Recv 详解</h3>
+<p>从channel中接收数据，也有两种方式 (普通用法和非阻塞用法)：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#75715e">// case 1
+</span><span style="color:#75715e"></span><span style="color:#a6e22e">val</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">ch</span>
+
+<span style="color:#75715e">// case 2 
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">select</span> {
+    <span style="color:#66d9ef">case</span> <span style="color:#a6e22e">val</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">ch</span>:
+        <span style="color:#75715e">// foo
+</span><span style="color:#75715e"></span>    <span style="color:#66d9ef">default</span>:
+        <span style="color:#75715e">// bar
+</span><span style="color:#75715e"></span>}
+
+<span style="color:#75715e">// 此外接收，还有另外一个参数，ok表示已接收
+</span><span style="color:#75715e"></span><span style="color:#a6e22e">val</span>, <span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">ch</span>
+</code></pre></div><p>在编译时都会被变成成调用<code>func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)</code>的函数，同样的两者在对block的赋值上并不相同，如下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#75715e">// case 1
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">chanrecv1</span>(<span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>, <span style="color:#a6e22e">elem</span> <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>) {
+	<span style="color:#a6e22e">chanrecv</span>(<span style="color:#a6e22e">c</span>, <span style="color:#a6e22e">elem</span>, <span style="color:#66d9ef">true</span>)
+}
+<span style="color:#75715e">// 多返回值
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">chanrecv2</span>(<span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>, <span style="color:#a6e22e">elem</span> <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>) (<span style="color:#a6e22e">received</span> <span style="color:#66d9ef">bool</span>) {
+	<span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">received</span> = <span style="color:#a6e22e">chanrecv</span>(<span style="color:#a6e22e">c</span>, <span style="color:#a6e22e">elem</span>, <span style="color:#66d9ef">true</span>)
+	<span style="color:#66d9ef">return</span>
+}
+
+<span style="color:#75715e">// case 2
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">selectnbrecv</span>(<span style="color:#a6e22e">elem</span> <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>, <span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>) (<span style="color:#a6e22e">selected</span> <span style="color:#66d9ef">bool</span>) {
+	<span style="color:#a6e22e">selected</span>, <span style="color:#a6e22e">_</span> = <span style="color:#a6e22e">chanrecv</span>(<span style="color:#a6e22e">c</span>, <span style="color:#a6e22e">elem</span>, <span style="color:#66d9ef">false</span>)
+	<span style="color:#66d9ef">return</span>
+}
+<span style="color:#75715e">// 多返回值
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">selectnbrecv2</span>(<span style="color:#a6e22e">elem</span> <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>, <span style="color:#a6e22e">received</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">bool</span>, <span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">hchan</span>) (<span style="color:#a6e22e">selected</span> <span style="color:#66d9ef">bool</span>) {
+	<span style="color:#75715e">// TODO(khr): just return 2 values from this function, now that it is in Go.
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">selected</span>, <span style="color:#f92672">*</span><span style="color:#a6e22e">received</span> = <span style="color:#a6e22e">chanrecv</span>(<span style="color:#a6e22e">c</span>, <span style="color:#a6e22e">elem</span>, <span style="color:#66d9ef">false</span>)
+	<span style="color:#66d9ef">return</span>
+}
+</code></pre></div><p>相较于send场景，recv场景稍微复杂一些，但是大体流程上保持一致，如下图：</p>
+<image src="/images/channel-recv.svg"/>
+<p>简单总结的说，就是recv为了实现在<code>发送者阻塞</code>的场景下的FIFO，做了特殊处理。</p>
+<h3 id="使用场景和模式">使用场景和模式</h3>
+<p>下面列举了一些比较常用的channel使用模式及相关场景。这里主要参考了<a href="https://chai2010.cn/advanced-go-programming-book/ch1-basic/ch1-06-goroutine.html">advanced-go-programming-book</a>。</p>
+<blockquote>
+<p>如有遗漏，敬请补充</p>
+</blockquote>
+<h4 id="synchronous">Synchronous</h4>
+<p>一般来说在需要同步goroutine的场景下，会使用sync.Mutex或者sync.WaitGroup来同步。这里用channel来实现一下goroutine同步。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+    <span style="color:#a6e22e">done</span> <span style="color:#f92672">:=</span> make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>, <span style="color:#ae81ff">1</span>)
+
+    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>(){
+        println(<span style="color:#e6db74">&#34;i&#39;m running&#34;</span>)
+        <span style="color:#a6e22e">done</span> <span style="color:#f92672">&lt;-</span> <span style="color:#ae81ff">1</span>
+    }()
+
+    <span style="color:#75715e">// 如果有多个goroutine, 可以对done接收计数，或者检测goroutine关闭来判断同步完成
+</span><span style="color:#75715e"></span>    <span style="color:#f92672">&lt;-</span><span style="color:#a6e22e">done</span>
+    println(<span style="color:#e6db74">&#34;main goroutine done&#34;</span>)
+}
+</code></pre></div><h4 id="producer-consumer">Producer-Consumer</h4>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">Producer</span>(<span style="color:#a6e22e">ch</span> <span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>) {
+    <span style="color:#66d9ef">for</span> {
+        <span style="color:#a6e22e">ch</span> <span style="color:#f92672">&lt;-</span> <span style="color:#ae81ff">1</span>
+    }
+}
+
+<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">Consumer</span>(<span style="color:#a6e22e">ch</span> <span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>) {
+    <span style="color:#66d9ef">for</span> {
+        <span style="color:#a6e22e">v</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">ch</span>
+        println(<span style="color:#a6e22e">v</span>)
+    }
+}
+
+<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+    <span style="color:#a6e22e">ch</span> <span style="color:#f92672">:=</span> make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>, <span style="color:#ae81ff">2</span>)
+	<span style="color:#66d9ef">go</span> <span style="color:#a6e22e">Producer</span>(<span style="color:#a6e22e">ch</span>)
+	<span style="color:#66d9ef">go</span> <span style="color:#a6e22e">Producer</span>(<span style="color:#a6e22e">ch</span>)
+	<span style="color:#66d9ef">go</span> <span style="color:#a6e22e">Consumer</span>(<span style="color:#a6e22e">ch</span>)
+	<span style="color:#66d9ef">go</span> <span style="color:#a6e22e">Consumer</span>(<span style="color:#a6e22e">ch</span>)
+
+    <span style="color:#66d9ef">select</span>{}
+}
+</code></pre></div><h4 id="pub-sub">Pub-Sub</h4>
+<p>发布订阅与生产者消费者类似，唯一区别在于发布订阅模型中，发布者不关心有多少个订阅者即每个订阅者都应该收到消息，而在生产者消费者模型中，消费者是集群消费（集群消费是说每一条消息只有一个消费者可以消费）。使用channel也可以很简单的实现Pub/Sub这种模型:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">topic</span> <span style="color:#66d9ef">struct</span>{
+	<span style="color:#a6e22e">chPub</span> <span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>
+	<span style="color:#a6e22e">chSub</span> []<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>
+	<span style="color:#a6e22e">bufsize</span> <span style="color:#66d9ef">int</span>
+}
+
+<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">newTopic</span>(<span style="color:#a6e22e">bufsize</span> <span style="color:#66d9ef">int</span>) <span style="color:#f92672">*</span><span style="color:#a6e22e">topic</span> {
+	<span style="color:#66d9ef">return</span> <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">topic</span>{
+		<span style="color:#a6e22e">bufsize</span>: <span style="color:#a6e22e">bufsize</span>,
+		<span style="color:#a6e22e">chPub</span>:   make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>, <span style="color:#a6e22e">bufsize</span>),
+		<span style="color:#a6e22e">chSub</span>:   make([]<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">5</span>),
+	}
+}
+
+<span style="color:#75715e">// 这里不是并发安全的！！！
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">t</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">topic</span>) <span style="color:#a6e22e">Sub</span>() <span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>  {
+	<span style="color:#a6e22e">ch</span> <span style="color:#f92672">:=</span> make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>, <span style="color:#a6e22e">t</span>.<span style="color:#a6e22e">bufsize</span>)
+	<span style="color:#a6e22e">t</span>.<span style="color:#a6e22e">chSub</span> = append(<span style="color:#a6e22e">t</span>.<span style="color:#a6e22e">chSub</span>, <span style="color:#a6e22e">ch</span>)
+	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">ch</span>
+}
+
+<span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">t</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">topic</span>) <span style="color:#a6e22e">Pub</span>(<span style="color:#a6e22e">v</span> <span style="color:#66d9ef">int</span>) {
+	<span style="color:#a6e22e">t</span>.<span style="color:#a6e22e">chPub</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">v</span>
+	<span style="color:#75715e">// 分发
+</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+		<span style="color:#a6e22e">v2</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">t</span>.<span style="color:#a6e22e">chPub</span>
+		<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">idx</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">t</span>.<span style="color:#a6e22e">chSub</span> {
+			<span style="color:#a6e22e">t</span>.<span style="color:#a6e22e">chSub</span>[<span style="color:#a6e22e">idx</span>] <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">v2</span>
+		}
+	}()
+}
+
+<span style="color:#75715e">// Q：如何实现topic的关闭方法
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+	<span style="color:#a6e22e">topic</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">newTopic</span>(<span style="color:#a6e22e">topic</span>)
+	<span style="color:#75715e">// 开启5个订阅
+</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> &lt; <span style="color:#ae81ff">5</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+		<span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+			<span style="color:#a6e22e">ch</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">topic</span>.<span style="color:#a6e22e">Sub</span>()
+			<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">v</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">ch</span> {
+				println(<span style="color:#e6db74">&#34;recv topic&#34;</span>, <span style="color:#a6e22e">v</span>)
+			}
+		}()
+	}
+	<span style="color:#75715e">// 发布消息
+</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">v</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">10</span>; <span style="color:#a6e22e">v</span> &lt; <span style="color:#ae81ff">100</span>; <span style="color:#a6e22e">v</span><span style="color:#f92672">++</span>{
+		<span style="color:#a6e22e">topic</span>.<span style="color:#a6e22e">Pub</span>(<span style="color:#a6e22e">v</span>)
+		<span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Sleep</span>(<span style="color:#ae81ff">100</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Millisecond</span>)
+	}
+}
+</code></pre></div><h4 id="concurrent-pool">Concurrent Pool</h4>
+<p>并发控制也是channel的重要应用场景，利用channel会阻塞的特性，得以控制最大goroutine数。在Web应用中可以用于实现限流。下面实现的方式，类似与令牌桶，另外推荐一个<a href="https://github.com/yeqown/fasthttp-reverse-proxy/blob/master/channelpool.go">chanpool</a>的实现以供参考。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">obj</span> <span style="color:#66d9ef">int</span>
+
+<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">factory</span>() <span style="color:#a6e22e">obj</span> {
+	<span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;newobj&#34;</span>
+}
+
+<span style="color:#66d9ef">type</span> <span style="color:#a6e22e">pool</span> <span style="color:#66d9ef">struct</span> {
+	<span style="color:#a6e22e">ch</span> <span style="color:#66d9ef">chan</span> <span style="color:#a6e22e">obj</span>
+}
+
+<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">newpool</span>() <span style="color:#a6e22e">pool</span> {
+	<span style="color:#a6e22e">p</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">pool</span>{
+		<span style="color:#a6e22e">ch</span>: make(<span style="color:#66d9ef">chan</span> <span style="color:#a6e22e">obj</span>, <span style="color:#ae81ff">10</span>),
+	}
+	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> &lt; <span style="color:#ae81ff">10</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+		<span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">put</span>(<span style="color:#a6e22e">obj</span>(<span style="color:#a6e22e">i</span>))
+	} 
+}
+
+<span style="color:#75715e">// 需要增加并发安全！！！
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">p</span> <span style="color:#a6e22e">pool</span>) <span style="color:#a6e22e">put</span>(<span style="color:#a6e22e">obj</span> <span style="color:#a6e22e">obj</span>)  {
+	<span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">ch</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">obj</span>
+}
+
+<span style="color:#75715e">// 需要增加并发安全！！！
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">p</span> <span style="color:#a6e22e">pool</span>) <span style="color:#a6e22e">get</span>() <span style="color:#a6e22e">obj</span> {
+	<span style="color:#a6e22e">v</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">ch</span>
+	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">v</span>
+}
+
+<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+	<span style="color:#a6e22e">pool</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">newpool</span>()
+
+	<span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+		<span style="color:#66d9ef">for</span> {
+			println(<span style="color:#e6db74">&#34;num of running g:&#34;</span>, <span style="color:#a6e22e">runtime</span>.<span style="color:#a6e22e">NumGoroutine</span>())
+			<span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Sleep</span>(<span style="color:#ae81ff">100</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Millisecond</span>)
+		}
+	}()
+
+	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> &lt; <span style="color:#ae81ff">100</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+		<span style="color:#a6e22e">obj</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">pool</span>.<span style="color:#a6e22e">get</span>()
+		<span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+			<span style="color:#66d9ef">defer</span> <span style="color:#a6e22e">pool</span>.<span style="color:#a6e22e">put</span>(<span style="color:#a6e22e">obj</span>)
+			<span style="color:#75715e">// do some work
+</span><span style="color:#75715e"></span>			<span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Sleep</span>(<span style="color:#ae81ff">100</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Millisecond</span>)			
+		}()
+	}
+}
+
+<span style="color:#75715e">// num of running g: 12
+</span><span style="color:#75715e">// num of running g: 12
+</span><span style="color:#75715e">// num of running g: 12
+</span><span style="color:#75715e">// num of running g: 12
+</span><span style="color:#75715e">// num of running g: 12
+</span><span style="color:#75715e">// num of running g: 12
+</span><span style="color:#75715e">// num of running g: 12
+</span><span style="color:#75715e">// num of running g: 12
+</span><span style="color:#75715e">// num of running g: 12
+</span><span style="color:#75715e">// num of running g: 12
+</span></code></pre></div><h3 id="总结">总结</h3>
+<p>掌握channel的原理，能帮助我们在实际应用中快速定位和分析并发带来的问题。也能在高并发场景下，合理利用channel。</p>
+<blockquote>
+<p>水平有限，如有错误，欢迎勘误指正🙏。</p>
+</blockquote>
+<h3 id="参考">参考</h3>
+<ul>
+<li><a href="https://draveness.me/golang/docs/part3-runtime/ch06-concurrency/golang-channel/">https://draveness.me/golang/docs/part3-runtime/ch06-concurrency/golang-channel/</a></li>
+<li><a href="https://github.com/golang/go/tree/release-branch.go1.14">https://github.com/golang/go/tree/release-branch.go1.14</a></li>
+<li><a href="https://github.com/eapache/channels">https://github.com/eapache/channels</a></li>
+<li><a href="https://colobu.com/2018/03/26/channel-patterns/">https://colobu.com/2018/03/26/channel-patterns/</a></li>
+<li><a href="https://juejin.im/post/5decff136fb9a016544bce67">https://juejin.im/post/5decff136fb9a016544bce67</a></li>
+<li><a href="https://chai2010.cn/advanced-go-programming-book/ch1-basic/ch1-06-goroutine.html">https://chai2010.cn/advanced-go-programming-book/ch1-basic/ch1-06-goroutine.html</a></li>
+</ul>
+
+
+                            
+                            
+                            
+                            
+                            
+                        </section>
+
+					</div>
+
+                    
+
+<footer id="footer">
+    
+    <section>
+      <form method="post" action="post-action">
+        <div class="fields">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" name="name" id="name" />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="text" name="email" id="email" />
+          </div>
+          <div class="field">
+            <label for="message">Message</label>
+            <textarea name="message" id="message" rows="3"></textarea>
+          </div>
+        </div>
+        <ul class="actions">
+          <li><input type="submit" value='Send A Message' /></li>
+        </ul>
+      </form>
+    </section>
+    
+    <section class="split contact">
+        
+        <section class="alt">
+            <h3>Address</h3>
+            <p>
+                
+                     Chengdu · China
+                
+                     <br/>  This is a city that comes and doesn&#39;t want to go
+                
+            </p>
+        </section>
+        
+        
+        <section>
+            <h3>Phone</h3>
+            <p><a href="tel:no%20way">no way</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Email</h3>
+            <p><a href="mailto:yeqown@gmail.com">yeqown@gmail.com</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Social</h3>
+            <ul class="icons alt">
+                
+                <li><a href="https://twitter.com/yeqown" class="icon alt fa-twitter"><span class="label">Twitter</span></a></li>
+                
+                
+                
+                
+                
+                <li><a href="https://github.com/yeqown" class="icon alt fa-github"><span class="label">GitHub</span></a></li>
+                
+                
+                
+                
+                
+            </ul>
+        </section>
+        
+    </section>
+</footer>
+
+                    
+<div id="copyright">
+    <ul><li>&copy; Yeqown</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li><li>Hugo Port: <a href="https://curtistimson.co.uk">curttimson</a></li></ul>
+</div>
+
+
+            </div>
+            
+            
+
+
+
+
+
+
+
+
+
+
+<script src='/assets/js/bundle.js'></script>
+	</body>
+</html>

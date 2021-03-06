@@ -1,0 +1,494 @@
+<!DOCTYPE HTML>
+
+<html lang='en'>
+	<head>
+		<title>基于Repository设计缓存方案 &middot; Yeqown</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		
+		
+		
+		<link rel="stylesheet" href="/assets/css/main.min.css">
+		
+		
+		<link rel="shortcut icon" href="favicon.ico">
+		
+		
+		<noscript><link rel="stylesheet" href='/assets/css/noscript.css' /></noscript>
+		<link rel="stylesheet" href="/highlight/styles/monokai-sublime.css">
+		
+		<script src="/highlight/highlight.pack.js"></script>
+		<script>hljs.initHighlightingOnLoad();</script>
+	</head>
+	<body lang='en' class="is-preload">
+
+		
+			<div id="wrapper">
+
+                
+<header id="header">
+    <a href='/' class="logo">Yeqown</a>
+</header>
+
+                
+
+<nav id="nav">
+    <ul class="links">
+        <li class="active"><a href='/'>Yeqown</a></li>
+        
+        <li><a href='/#footer'>Contact</a></li>
+        
+        
+    </ul>
+    
+    <ul class="icons">
+        
+        <li><a href="https://twitter.com/yeqown" class="icon fa-twitter"><span class="label">Twitter</span></a></li>
+        
+        
+        
+        
+        
+        <li><a href="https://github.com/yeqown" class="icon fa-github"><span class="label">GitHub</span></a></li>
+        
+        
+        
+        
+        
+    </ul>
+    
+</nav>
+
+
+				
+					<div id="main">
+
+						
+                        <section class="post">
+                            <header class="major">
+                                
+                                <span class="date">November 14, 2019</span>
+                                
+                                <h1>基于Repository设计缓存方案</h1>
+                                <p>相比于使用一个中间件来“暴力”缓存接口的响应，提高接口查询速度而言，Repository缓存能更好的控制缓存粒度和更新时机。</p>
+                            </header>
+                            
+                            <h3 id="场景">场景</h3>
+<pre><code>Tester—A：这个 getInfo 接口咋这么慢呢？查一下要5+s？QPS竟然只有10！！！！
+RD-B    ：这是因为getInfo要查库。。。N多库
+Tester-B：那优化一下呗？
+RD-B    ：好的，容我操作一波（给接口加上一个响应缓存），好了你再测试一下
+Tester-B：（测试中。。。），速度果然快了不少。诶不对，这个接口里拿到的用户信息不对，我明明已经balaba了，这里没有更新！！！
+RD-B    ：哦哦哦，我晓得咯，再容我操作一波（缓存加有效时间，个人信息更新的时候再强删缓存），O了
+
+至此开始了针对于QPS+缓存更新的一些列测试。。。剧终。
+</code></pre>
+<p>QPS和响应时间是后（jie）端（kou)工程师非常熟悉的指标，这两个值能比较直观的反映该接口的性能，<del>间接</del>直接影响了前端页面的流畅度。。。</p>
+<h3 id="问题来了">问题来了</h3>
+<h4 id="del接口del查询性能如何提高"><del>接口</del>查询性能如何提高</h4>
+<p>除去机器和编程语言的因素之后，肯定要从业务场景出发，分析接口响应缓慢的原因。譬如，最常见的:</p>
+<ol>
+<li>查N多表，表还没有索引orz</li>
+<li>无用数据，增加传输的Size</li>
+<li>反复查询某些<del>热点</del>数据，但每次都直接打到数据库</li>
+<li>上游服务响应缓慢</li>
+<li>其他</li>
+</ol>
+<p>好了，这里只讨论热点数据的缓存方案，毕竟要具体场景具体分析，而缓存方案是比较通用的。</p>
+<h4 id="缓存方案如何选择">缓存方案如何选择</h4>
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>缓存方案</th>
+<th>优势</th>
+<th>劣势</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Response缓存</td>
+<td>简单暴力</td>
+<td>缓存更新时机不好把控，如果面面俱到可能心态崩坏；缓存粒度太大，无法局部更新；针对查询接口有帮助，其他业务下查询数据则毫无帮助</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Repository缓存</td>
+<td>粒度由Repo自行掌握，可控性强；Repo复用场景下会提高应用整体的速度</td>
+<td>需要针对各个Repo做缓存的处理；改动较多；其他orz</td>
+</tr>
+</tbody>
+</table>
+<p>总的来说，Repository的缓存方案，在上述背景上较简单暴力的中间件缓存法要更加优雅可控～。</p>
+<h3 id="缓存算法">缓存算法</h3>
+<p>提到缓存就一定会提到缓存替换策略，有最常见的：<code>LRU</code> <code>LFU</code> <code>FIFO</code> <code>MRU(最近频繁使用算法)</code> <code>LRU的多个变种算法</code> <code>LIRS</code>等。
+这里选用了LRU-K（K=2）并基于<code>golang</code>来实现 <code>cached-repository</code>，更多算法的详细信息参见参考文档中的<a href="https://yeqown.github.io/2019/08/12/LRU%E5%92%8CLRU-K/">LRU和LRU-K</a>:</p>
+<p>这里分成了两个<code>interface</code>:</p>
+<p><code>CacheAlgor</code>重点在于与<code>Repo</code>交互，所以只提供了简单的增删改查，底层还是基于<code>Cache</code>来实现的。本意是想实现多种缓存替换算法来丰富<code>cached-repository</code>，orz</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-golang" data-lang="golang"><span style="color:#75715e">// cache.go
+</span><span style="color:#75715e">// CacheAlgor is an interface implements different alg.
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">CacheAlgor</span> <span style="color:#66d9ef">interface</span> {
+	<span style="color:#a6e22e">Put</span>(<span style="color:#a6e22e">key</span>, <span style="color:#a6e22e">value</span> <span style="color:#66d9ef">interface</span>{})
+	<span style="color:#a6e22e">Get</span>(<span style="color:#a6e22e">key</span> <span style="color:#66d9ef">interface</span>{}) (<span style="color:#a6e22e">value</span> <span style="color:#66d9ef">interface</span>{}, <span style="color:#a6e22e">ok</span> <span style="color:#66d9ef">bool</span>)
+	<span style="color:#a6e22e">Update</span>(<span style="color:#a6e22e">key</span>, <span style="color:#a6e22e">value</span> <span style="color:#66d9ef">interface</span>{})
+	<span style="color:#a6e22e">Delete</span>(<span style="color:#a6e22e">key</span> <span style="color:#66d9ef">interface</span>{})
+}
+</code></pre></div><p><code>lru.Cache</code> 在于提供 基于<code>LRU-like</code>算法缓存和替换能力，所以接口会更丰富一些，</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-golang" data-lang="golang"><span style="color:#75715e">// lru/types.go
+</span><span style="color:#75715e">// Cache is the interface for simple LRU cache.
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Cache</span> <span style="color:#66d9ef">interface</span> {
+	<span style="color:#75715e">// Puts a value to the cache, returns true if an eviction occurred and
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">// updates the &#34;recently used&#34;-ness of the key.
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Put</span>(<span style="color:#a6e22e">key</span>, <span style="color:#a6e22e">value</span> <span style="color:#66d9ef">interface</span>{}) <span style="color:#66d9ef">bool</span>
+
+	<span style="color:#75715e">// Returns key&#39;s value from the cache and
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">// updates the &#34;recently used&#34;-ness of the key. #value, isFound
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Get</span>(<span style="color:#a6e22e">key</span> <span style="color:#66d9ef">interface</span>{}) (<span style="color:#a6e22e">value</span> <span style="color:#66d9ef">interface</span>{}, <span style="color:#a6e22e">ok</span> <span style="color:#66d9ef">bool</span>)
+
+	<span style="color:#75715e">// Removes a key from the cache.
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Remove</span>(<span style="color:#a6e22e">key</span> <span style="color:#66d9ef">interface</span>{}) <span style="color:#66d9ef">bool</span>
+
+	<span style="color:#75715e">// Peeks a key
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">// Returns key&#39;s value without updating the &#34;recently used&#34;-ness of the key.
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Peek</span>(<span style="color:#a6e22e">key</span> <span style="color:#66d9ef">interface</span>{}) (<span style="color:#a6e22e">value</span> <span style="color:#66d9ef">interface</span>{}, <span style="color:#a6e22e">ok</span> <span style="color:#66d9ef">bool</span>)
+
+	<span style="color:#75715e">// Returns the oldest entry from the cache. #key, value, isFound
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Oldest</span>() (<span style="color:#66d9ef">interface</span>{}, <span style="color:#66d9ef">interface</span>{}, <span style="color:#66d9ef">bool</span>)
+
+	<span style="color:#75715e">// Returns a slice of the keys in the cache, from oldest to newest.
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Keys</span>() []<span style="color:#66d9ef">interface</span>{}
+
+	<span style="color:#75715e">// Returns the number of items in the cache.
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Len</span>() <span style="color:#66d9ef">int</span>
+
+	<span style="color:#75715e">// iter all key and items in cache
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Iter</span>(<span style="color:#a6e22e">f</span> <span style="color:#a6e22e">IterFunc</span>)
+
+	<span style="color:#75715e">// Clears all cache entries.
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Purge</span>()
+}
+</code></pre></div><p>关于如何实现<code>LRU</code>或者<code>LRU-K</code>，网上已经有很多文章了，原理也不复杂，这里就不过多赘述了，直接上测试结果</p>
+<h3 id="简单测试">简单测试</h3>
+<p>完整代码参见<a href="https://github.com/yeqown/cached-repository/tree/master/examples/custom-cache-manage">code</a></p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-golang" data-lang="golang"><span style="color:#75715e">// MysqlRepo .
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">MysqlRepo</span> <span style="color:#66d9ef">struct</span> {
+	<span style="color:#a6e22e">db</span>   <span style="color:#f92672">*</span><span style="color:#a6e22e">gorm</span>.<span style="color:#a6e22e">DB</span>
+	<span style="color:#a6e22e">calg</span> <span style="color:#a6e22e">cp</span>.<span style="color:#a6e22e">CacheAlgor</span>
+	<span style="color:#75715e">// *cp.EmbedRepo
+</span><span style="color:#75715e"></span>}
+
+<span style="color:#75715e">// NewMysqlRepo .
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">NewMysqlRepo</span>(<span style="color:#a6e22e">db</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">gorm</span>.<span style="color:#a6e22e">DB</span>) (<span style="color:#f92672">*</span><span style="color:#a6e22e">MysqlRepo</span>, <span style="color:#66d9ef">error</span>) {
+    <span style="color:#75715e">// func NewLRUK(k, size, hSize uint, onEvict EvictCallback) (*K, error)
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">c</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">lru</span>.<span style="color:#a6e22e">NewLRUK</span>(<span style="color:#ae81ff">2</span>, <span style="color:#ae81ff">10</span>, <span style="color:#ae81ff">20</span>, <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">k</span>, <span style="color:#a6e22e">v</span> <span style="color:#66d9ef">interface</span>{}) {
+		<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;key: %v, value: %v\n&#34;</span>, <span style="color:#a6e22e">k</span>, <span style="color:#a6e22e">v</span>)
+	})
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+		<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">err</span>
+	}
+
+	<span style="color:#66d9ef">return</span> <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">MysqlRepo</span>{
+        <span style="color:#a6e22e">db</span>:   <span style="color:#a6e22e">db</span>,
+        <span style="color:#75715e">// func New(c lru.Cache) CacheAlgor
+</span><span style="color:#75715e"></span>		<span style="color:#a6e22e">calg</span>: <span style="color:#a6e22e">cp</span>.<span style="color:#a6e22e">New</span>(<span style="color:#a6e22e">c</span>),
+	}, <span style="color:#66d9ef">nil</span>
+}
+
+<span style="color:#75715e">// GetByID .
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">repo</span> <span style="color:#a6e22e">MysqlRepo</span>) <span style="color:#a6e22e">GetByID</span>(<span style="color:#a6e22e">id</span> <span style="color:#66d9ef">uint</span>) (<span style="color:#f92672">*</span><span style="color:#a6e22e">userModel</span>, <span style="color:#66d9ef">error</span>) {
+	<span style="color:#a6e22e">start</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Now</span>()
+	<span style="color:#66d9ef">defer</span> <span style="color:#66d9ef">func</span>() {
+		<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;this queryid=%d cost: %d ns\n&#34;</span>,<span style="color:#a6e22e">id</span>, <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Now</span>().<span style="color:#a6e22e">Sub</span>(<span style="color:#a6e22e">start</span>).<span style="color:#a6e22e">Nanoseconds</span>())
+	}()
+
+	<span style="color:#a6e22e">v</span>, <span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">repo</span>.<span style="color:#a6e22e">calg</span>.<span style="color:#a6e22e">Get</span>(<span style="color:#a6e22e">id</span>)
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">ok</span> {
+		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">v</span>.(<span style="color:#f92672">*</span><span style="color:#a6e22e">userModel</span>), <span style="color:#66d9ef">nil</span>
+	}
+
+	<span style="color:#75715e">// actual find in DB
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">m</span> <span style="color:#f92672">:=</span> new(<span style="color:#a6e22e">userModel</span>)
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">repo</span>.<span style="color:#a6e22e">db</span>.<span style="color:#a6e22e">Where</span>(<span style="color:#e6db74">&#34;id = ?&#34;</span>, <span style="color:#a6e22e">id</span>).<span style="color:#a6e22e">First</span>(<span style="color:#a6e22e">m</span>).<span style="color:#a6e22e">Error</span>; <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+		<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">err</span>
+	}
+
+	<span style="color:#a6e22e">repo</span>.<span style="color:#a6e22e">calg</span>.<span style="color:#a6e22e">Put</span>(<span style="color:#a6e22e">id</span>, <span style="color:#a6e22e">m</span>)
+	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">m</span>, <span style="color:#66d9ef">nil</span>
+}
+
+<span style="color:#75715e">// Update .
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">repo</span> <span style="color:#a6e22e">MysqlRepo</span>) <span style="color:#a6e22e">Update</span>(<span style="color:#a6e22e">id</span> <span style="color:#66d9ef">uint</span>, <span style="color:#a6e22e">m</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">userModel</span>) <span style="color:#66d9ef">error</span> {
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">repo</span>.<span style="color:#a6e22e">db</span>.<span style="color:#a6e22e">Where</span>(<span style="color:#e6db74">&#34;id = ?&#34;</span>, <span style="color:#a6e22e">id</span>).<span style="color:#a6e22e">Update</span>(<span style="color:#a6e22e">m</span>).<span style="color:#a6e22e">Error</span>; <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+	}
+
+	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;before: %v\n&#34;</span>, <span style="color:#a6e22e">m</span>)
+	<span style="color:#a6e22e">m</span>.<span style="color:#a6e22e">ID</span> = <span style="color:#a6e22e">id</span>
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">repo</span>.<span style="color:#a6e22e">db</span>.<span style="color:#a6e22e">First</span>(<span style="color:#a6e22e">m</span>); <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+
+	}
+	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;after: %v\n&#34;</span>, <span style="color:#a6e22e">m</span>)
+
+	<span style="color:#75715e">// update cache, ifcache hit id
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">repo</span>.<span style="color:#a6e22e">calg</span>.<span style="color:#a6e22e">Put</span>(<span style="color:#a6e22e">id</span>, <span style="color:#a6e22e">m</span>)
+
+	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+}
+
+<span style="color:#75715e">// Delete .
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">repo</span> <span style="color:#a6e22e">MysqlRepo</span>) <span style="color:#a6e22e">Delete</span>(<span style="color:#a6e22e">id</span> <span style="color:#66d9ef">uint</span>) <span style="color:#66d9ef">error</span> {
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">repo</span>.<span style="color:#a6e22e">db</span>.<span style="color:#a6e22e">Delete</span>(<span style="color:#66d9ef">nil</span>, <span style="color:#e6db74">&#34;id = ?&#34;</span>, <span style="color:#a6e22e">id</span>).<span style="color:#a6e22e">Error</span>; <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+	}
+
+	<span style="color:#a6e22e">repo</span>.<span style="color:#a6e22e">calg</span>.<span style="color:#a6e22e">Delete</span>(<span style="color:#a6e22e">id</span>)
+	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+}
+
+<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+	<span style="color:#75715e">// ... prepare data
+</span><span style="color:#75715e"></span>
+	<span style="color:#a6e22e">rand</span>.<span style="color:#a6e22e">Seed</span>(<span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Now</span>().<span style="color:#a6e22e">UnixNano</span>())
+	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> &lt; <span style="color:#ae81ff">1000</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+		<span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+			<span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Add</span>(<span style="color:#ae81ff">1</span>)
+			<span style="color:#a6e22e">id</span> <span style="color:#f92672">:=</span> uint(<span style="color:#a6e22e">rand</span>.<span style="color:#a6e22e">Intn</span>(<span style="color:#ae81ff">10</span>))
+			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">id</span> <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+				<span style="color:#66d9ef">continue</span>
+			}
+	
+			<span style="color:#a6e22e">v</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">repo</span>.<span style="color:#a6e22e">GetByID</span>(<span style="color:#a6e22e">id</span>)
+			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+				<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;err: %d , %v\n&#34;</span>, <span style="color:#a6e22e">id</span>, <span style="color:#a6e22e">err</span>)
+				<span style="color:#66d9ef">continue</span>
+			}
+	
+			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">ID</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">id</span> <span style="color:#f92672">||</span>
+				<span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">Name</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Sprintf</span>(<span style="color:#e6db74">&#34;name-%d&#34;</span>, <span style="color:#a6e22e">id</span>) <span style="color:#f92672">||</span>
+				<span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">Province</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Sprintf</span>(<span style="color:#e6db74">&#34;province-%d&#34;</span>, <span style="color:#a6e22e">id</span>) <span style="color:#f92672">||</span>
+				<span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">City</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Sprintf</span>(<span style="color:#e6db74">&#34;city-%d&#34;</span>, <span style="color:#a6e22e">id</span>) {
+				<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;err: not matched target with id[%d]: %v\n&#34;</span>, <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">ID</span>, <span style="color:#a6e22e">v</span>)
+			}
+			<span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Done</span>()
+		}()
+	}
+	<span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Wait</span>()
+}
+</code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">➜  custom-cache-manage git:<span style="color:#f92672">(</span>master<span style="color:#f92672">)</span> ✗ go run main.go 
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">245505</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">131838</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">128272</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">112281</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">123942</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">140267</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">148814</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">126904</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">129676</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">174202</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">151673</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">156370</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">159285</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">142215</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">691</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">450</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span> cost: <span style="color:#ae81ff">160263</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">149655</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">756</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span> cost: <span style="color:#ae81ff">143363</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">740</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">558</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">476</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">184098</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">824</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span> cost: <span style="color:#ae81ff">556</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">632</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">480</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">439</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">409</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">431</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">479</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">423</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span> cost: <span style="color:#ae81ff">423</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">411</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">423</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span> cost: <span style="color:#ae81ff">394</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">410</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">424</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">428</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">433</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">420</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">424</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">406</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">399</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">405</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">428</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">383</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">399</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">413</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">381</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">427</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">430</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">468</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">406</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">380</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">360</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">660</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">393</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">419</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">1254</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">723</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">503</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span> cost: <span style="color:#ae81ff">448</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">510</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">432</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">999</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> cost: <span style="color:#ae81ff">419</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span> cost: <span style="color:#ae81ff">658</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">1322</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">543</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">1311</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">348</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">309</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">350</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">311</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">336</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">567</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">9</span> cost: <span style="color:#ae81ff">293</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">338</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">499</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">318</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">330</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">322</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">339</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">7</span> cost: <span style="color:#ae81ff">1273</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">4</span> cost: <span style="color:#ae81ff">1175</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">306</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">316</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">330</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">5</span> cost: <span style="color:#ae81ff">322</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">324</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span> cost: <span style="color:#ae81ff">291</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> cost: <span style="color:#ae81ff">310</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">321</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span> cost: <span style="color:#ae81ff">294</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">6</span> cost: <span style="color:#ae81ff">293</span> ns
+this queryid<span style="color:#f92672">=</span><span style="color:#ae81ff">8</span> cost: <span style="color:#ae81ff">3566</span> ns
+...more ignored
+</code></pre></div><blockquote>
+<p>水平有限，如有错误，欢迎勘误指正🙏。</p>
+</blockquote>
+<h3 id="代码">代码</h3>
+<p><a href="https://github.com/yeqown/cached-repository">github.com/yeqown/cached-repository</a></p>
+<h3 id="参考">参考</h3>
+<ul>
+<li><a href="https://cloud.tencent.com/developer/article/1005742">LIRS</a></li>
+<li><a href="https://yeqown.github.io/2019/08/12/LRU%E5%92%8CLRU-K/">LRU-k</a></li>
+</ul>
+
+
+                            
+                            
+                            
+                            
+                            
+                        </section>
+
+					</div>
+
+                    
+
+<footer id="footer">
+    
+    <section>
+      <form method="post" action="post-action">
+        <div class="fields">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" name="name" id="name" />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="text" name="email" id="email" />
+          </div>
+          <div class="field">
+            <label for="message">Message</label>
+            <textarea name="message" id="message" rows="3"></textarea>
+          </div>
+        </div>
+        <ul class="actions">
+          <li><input type="submit" value='Send A Message' /></li>
+        </ul>
+      </form>
+    </section>
+    
+    <section class="split contact">
+        
+        <section class="alt">
+            <h3>Address</h3>
+            <p>
+                
+                     Chengdu · China
+                
+                     <br/>  This is a city that comes and doesn&#39;t want to go
+                
+            </p>
+        </section>
+        
+        
+        <section>
+            <h3>Phone</h3>
+            <p><a href="tel:no%20way">no way</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Email</h3>
+            <p><a href="mailto:yeqown@gmail.com">yeqown@gmail.com</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Social</h3>
+            <ul class="icons alt">
+                
+                <li><a href="https://twitter.com/yeqown" class="icon alt fa-twitter"><span class="label">Twitter</span></a></li>
+                
+                
+                
+                
+                
+                <li><a href="https://github.com/yeqown" class="icon alt fa-github"><span class="label">GitHub</span></a></li>
+                
+                
+                
+                
+                
+            </ul>
+        </section>
+        
+    </section>
+</footer>
+
+                    
+<div id="copyright">
+    <ul><li>&copy; Yeqown</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li><li>Hugo Port: <a href="https://curtistimson.co.uk">curttimson</a></li></ul>
+</div>
+
+
+            </div>
+            
+            
+
+
+
+
+
+
+
+
+
+
+<script src='/assets/js/bundle.js'></script>
+	</body>
+</html>

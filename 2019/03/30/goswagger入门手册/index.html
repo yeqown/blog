@@ -1,0 +1,347 @@
+<!DOCTYPE HTML>
+
+<html lang='en'>
+	<head>
+		<title>goswagger入门手册 &middot; Yeqown</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		
+		
+		
+		<link rel="stylesheet" href="/assets/css/main.min.css">
+		
+		
+		<link rel="shortcut icon" href="favicon.ico">
+		
+		
+		<noscript><link rel="stylesheet" href='/assets/css/noscript.css' /></noscript>
+		<link rel="stylesheet" href="/highlight/styles/monokai-sublime.css">
+		
+		<script src="/highlight/highlight.pack.js"></script>
+		<script>hljs.initHighlightingOnLoad();</script>
+	</head>
+	<body lang='en' class="is-preload">
+
+		
+			<div id="wrapper">
+
+                
+<header id="header">
+    <a href='/' class="logo">Yeqown</a>
+</header>
+
+                
+
+<nav id="nav">
+    <ul class="links">
+        <li class="active"><a href='/'>Yeqown</a></li>
+        
+        <li><a href='/#footer'>Contact</a></li>
+        
+        
+    </ul>
+    
+    <ul class="icons">
+        
+        <li><a href="https://twitter.com/yeqown" class="icon fa-twitter"><span class="label">Twitter</span></a></li>
+        
+        
+        
+        
+        
+        <li><a href="https://github.com/yeqown" class="icon fa-github"><span class="label">GitHub</span></a></li>
+        
+        
+        
+        
+        
+    </ul>
+    
+</nav>
+
+
+				
+					<div id="main">
+
+						
+                        <section class="post">
+                            <header class="major">
+                                
+                                <span class="date">March 30, 2019</span>
+                                
+                                <h1>goswagger入门手册</h1>
+                                <p>本文旨在记录使用goswagger过程中遇到的一些问题（只在生成文档方面，不涉及其他功能）。</p>
+                            </header>
+                            
+                            <blockquote>
+<p>本文旨在记录使用goswagger过程中遇到的一些问题（只在生成文档方面，不涉及其他功能）：</p>
+</blockquote>
+<ul>
+<li>如何在go1.11+以上（支持Go Module）版本中的应用swagger</li>
+<li>一些注解上的注意事项</li>
+<li>如何在团队中管理API文档（主要涵盖了：swagger-ui的部署和使用）</li>
+</ul>
+<h3 id="关于swaggerhttpsswaggerio">关于<a href="https://swagger.io">swagger</a></h3>
+<p>swagger涵盖WebAPI的一整套工具：API设计，API实现（代码生成），API文档，API测试及API规范。更多信息请参见官网</p>
+<!-- more -->
+<h3 id="准备工作">准备工作</h3>
+<ul>
+<li>一个Golang web项目，并软连接到<code>GOPATH/src</code>下。【毕竟是支持Gomodule的项目，还放在GOPATH下就不科学了😄】</li>
+<li>安装swagger工具. 参见<a href="https://goswagger.io/install.html">安装</a></li>
+<li>环境：
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">➜  swagger-demo git:<span style="color:#f92672">(</span>master<span style="color:#f92672">)</span> ✗ go version
+go version go1.11.5 darwin/amd64
+➜  swagger-demo git:<span style="color:#f92672">(</span>master<span style="color:#f92672">)</span> ✗ swagger version
+version: v0.18.0
+commit: 6b23bb61413826ce42c3b14a37bf5870caf91e0b
+</code></pre></div></li>
+</ul>
+<h3 id="编写注释">编写注释</h3>
+<blockquote>
+<p>元信息包含了这个应用的基本信息。一般新建一个doc.go放在你的API根目录下；还有一定要注意这句话：</p>
+</blockquote>
+<blockquote>
+<p>You give it a main file and it will parse all the files that are reachable by that main package to produce a swagger specification.To use you can add a go:generate comment to your main file。</p>
+</blockquote>
+<blockquote>
+<p>//go:generate swagger generate spec</p>
+</blockquote>
+<blockquote>
+<p>The command requires a main package or file and it wants your code to compile. It uses the go tools loader to load an application and then scans all the packages that are in use by the code base. This means that for something to be discoverable it needs to be reachable by a code path triggered through the main package.</p>
+</blockquote>
+<blockquote>
+<p>就是说如果你配置好了一切东西，但是却因为你的main包“花里胡哨”，而无法生成文档的时候，记得尝试下这个方法！！！</p>
+</blockquote>
+<p>一般来说，一个API的文档无非包括：请求方法，路由，参数，响应。如下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#75715e">// 格式：swagger:parameters 操作ID(也就是标示一个路由的ID)
+</span><span style="color:#75715e">// swagger:parameters opid-get
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">getForm</span> <span style="color:#66d9ef">struct</span> {
+	<span style="color:#75715e">// in: query
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">ID</span> <span style="color:#66d9ef">int</span> <span style="color:#e6db74">`form:&#34;id&#34; binding:&#34;required&#34;`</span>
+}
+
+<span style="color:#75715e">// 格式：swagger:model ?模型名(可选)
+</span><span style="color:#75715e">// 动手题：为什么还需要额外定义一个模型getmodels来使用？而不是直接在getResponse中使用 []*models.GetModel ?
+</span><span style="color:#75715e">// swagger:model
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">getmodels</span> []<span style="color:#f92672">*</span><span style="color:#a6e22e">models</span>.<span style="color:#a6e22e">GetModel</span>
+
+<span style="color:#75715e">// 格式：swagger:response 响应结构名
+</span><span style="color:#75715e">// getResponse response demo of get controller
+</span><span style="color:#75715e">// swagger:response getResponse
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">getResponse</span> <span style="color:#66d9ef">struct</span> {
+	<span style="color:#75715e">// code int，这里参数较多自行参照文档，个人觉得比较实用的是 “in: query|body” 用于说明参数存在的位置
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">// in: body
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Code</span> <span style="color:#66d9ef">int</span> <span style="color:#e6db74">`json:&#34;code&#34;`</span>
+	<span style="color:#75715e">// modesl getmodel
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">// in: body
+</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Models</span> <span style="color:#a6e22e">getmodels</span> <span style="color:#e6db74">`json:&#34;models&#34;`</span>
+}
+
+<span style="color:#75715e">// Get ...
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">Get</span>(<span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">gin</span>.<span style="color:#a6e22e">Context</span>) {
+	<span style="color:#75715e">// swagger:route GET /base/get 范例 opid-get
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">// swagger Get范例
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//     Consumes:
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//     - application/json
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//     - application/x-protobuf
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//     Produces:
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//     - application/json
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//     - application/x-protobuf
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//     Schemes: http, https, ws, wss
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//     Responses:
+</span><span style="color:#75715e"></span>	<span style="color:#75715e">//       default: getResponse
+</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">var</span> (
+		<span style="color:#a6e22e">form</span> = new(<span style="color:#a6e22e">getForm</span>)
+		<span style="color:#a6e22e">resp</span> = new(<span style="color:#a6e22e">getResponse</span>)
+	)
+
+	<span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Code</span> = <span style="color:#ae81ff">0</span>
+	<span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Models</span> = <span style="color:#a6e22e">services</span>.<span style="color:#a6e22e">ListGetModels</span>()
+
+	<span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Println</span>(<span style="color:#e6db74">&#34;form is :&#34;</span>, <span style="color:#f92672">*</span><span style="color:#a6e22e">form</span>)
+	<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">JSON</span>(<span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">StatusOK</span>, <span style="color:#a6e22e">resp</span>)
+}
+</code></pre></div><p>上述只是最基本的关于一个API的基础注释。更多请参见官方文档，尽管它不一定是最新的～</p>
+<h3 id="生成api文档swaggerjson">生成API文档（swagger.json）</h3>
+<p>swagger 生成文档的命令如下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-sh" data-lang="sh">➜  gonic git:<span style="color:#f92672">(</span>master<span style="color:#f92672">)</span> ✗ swagger generate spec -h
+Usage:
+  swagger <span style="color:#f92672">[</span>OPTIONS<span style="color:#f92672">]</span> generate spec <span style="color:#f92672">[</span>spec-OPTIONS<span style="color:#f92672">]</span>
+
+generate a swagger spec document from a go application
+
+Application Options:
+  -q, --quiet               silence logs
+  -o, --output<span style="color:#f92672">=</span>LOG-FILE     redirect logs to file
+
+Help Options:
+  -h, --help                Show this help message
+
+<span style="color:#f92672">[</span>spec command options<span style="color:#f92672">]</span>
+      -b, --base-path<span style="color:#f92672">=</span>      the base path to use <span style="color:#f92672">(</span>default: .<span style="color:#f92672">)</span>
+      -t, --tags<span style="color:#f92672">=</span>           build tags
+      -m, --scan-models     includes models that were annotated with <span style="color:#e6db74">&#39;swagger:model&#39;</span>
+          --compact         when present, doesn<span style="color:#960050;background-color:#1e0010">&#39;</span>t prettify the json
+      -o, --output<span style="color:#f92672">=</span>         the file to write to
+      -i, --input<span style="color:#f92672">=</span>          the file to use as input
+      -c, --include<span style="color:#f92672">=</span>        include packages matching pattern
+      -x, --exclude<span style="color:#f92672">=</span>        exclude packages matching pattern
+          --include-tag<span style="color:#f92672">=</span>    include routes having specified tags <span style="color:#f92672">(</span>can be specified many times<span style="color:#f92672">)</span>
+          --exclude-tag<span style="color:#f92672">=</span>    exclude routes having specified tags <span style="color:#f92672">(</span>can be specified many times<span style="color:#f92672">)</span>
+</code></pre></div><p>用于说明的Makefile</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-makefile" data-lang="makefile"><span style="color:#a6e22e">gen-doc</span><span style="color:#f92672">:</span>
+	<span style="color:#75715e"># 与 v3无异，只是不格式化生成的json文件</span>
+	GO111MODULE<span style="color:#f92672">=</span>off swagger generate spec -o swagger-demo.swagger.final.json -b ./mainC -c swagger-demo -m --compact
+
+<span style="color:#a6e22e">gen-doc-v3</span><span style="color:#f92672">:</span>
+	<span style="color:#75715e"># 支持扫描 swagger:model</span>
+	GO111MODULE<span style="color:#f92672">=</span>off swagger generate spec -o swagger-demo.swagger.v3.json -b ./mainC -c swagger-demo -m
+
+<span style="color:#a6e22e">gen-doc-v2</span><span style="color:#f92672">:</span>
+	<span style="color:#75715e"># 如果遇到找不到自己项目内部包的情况，且main包花里呼哨</span>
+	GO111MODULE<span style="color:#f92672">=</span>off swagger generate spec -o swagger-demo.swagger.v2.json -b ./mainC -c swagger-demo
+
+<span style="color:#a6e22e">gen-doc-v1</span><span style="color:#f92672">:</span>
+	<span style="color:#75715e"># main包花里胡哨，并不是一个单文件</span>
+	GO111MODULE<span style="color:#f92672">=</span>off swagger generate spec -o swagger-demo.swagger.v1.json -b ./mainC
+
+<span style="color:#a6e22e">gen-doc-v0</span><span style="color:#f92672">:</span>
+	<span style="color:#75715e"># 常规用法（适用于符合goswagger标准的项目）</span>
+	GO111MODULE<span style="color:#f92672">=</span>off swagger generate spec -o swagger-demo.swagger.v0.json
+
+<span style="color:#a6e22e">default</span><span style="color:#f92672">:</span> gen-doc-v0 gen-doc-v1 gen-doc-v2 gen-doc-v3 gen-doc 
+</code></pre></div><h3 id="管理api文档">管理API文档</h3>
+<p>生成了swagger.json文件之后，接下来就祭出可视化工具了<code>swagger-ui</code>。如果只是尝鲜，可以先用<code>swagger-editor</code>预览一下。</p>
+<blockquote>
+<p>话不多说： swagger-ui的docker镜像版：自带nginx。</p>
+</blockquote>
+<p>直接上docker-compose配置文件，语法可能不兼容各个版本，请自行调试。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yml" data-lang="yml"><span style="color:#f92672">version</span>: <span style="color:#e6db74">&#34;2&#34;</span>
+<span style="color:#f92672">services</span>:
+  <span style="color:#f92672">swagger_ui</span>:
+    <span style="color:#f92672">environment</span>:
+    - <span style="color:#ae81ff">SWAGGER_JSON=/usr/share/nginx/html/docs/swagger.json</span>
+    <span style="color:#f92672">image</span>:   <span style="color:#e6db74">&#34;swaggerapi/swagger-ui&#34;</span>
+    <span style="color:#f92672">volumes</span>: [<span style="color:#e6db74">&#34;./docs/:/usr/share/nginx/html/docs:rw&#34;</span>]
+    <span style="color:#f92672">restart</span>: <span style="color:#ae81ff">always</span>
+    <span style="color:#f92672">ports</span>:   [<span style="color:#e6db74">&#34;9000:8080&#34;</span>]
+</code></pre></div><p>把容器运行起来后，你就可以在配置的端口访问到<code>swagger-ui</code>的界面了，在顶部的搜索栏中输入想要查看的文档的URL，就可以方便的查看文档了。</p>
+<h3 id="参考资料">参考资料</h3>
+<ul>
+<li>以上代码均在<a href="https://github.com/yeqown/playground/tree/master/gonic/swagger-demo">yeqown/playground/gonic/swagger-demo</a>可以找到</li>
+<li><a href="https://swagger.io">swagger官网</a></li>
+<li><a href="https://goswagger.io">goswagger.io</a></li>
+</ul>
+
+
+                            
+                            
+                            
+                            
+                            
+                        </section>
+
+					</div>
+
+                    
+
+<footer id="footer">
+    
+    <section>
+      <form method="post" action="post-action">
+        <div class="fields">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" name="name" id="name" />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="text" name="email" id="email" />
+          </div>
+          <div class="field">
+            <label for="message">Message</label>
+            <textarea name="message" id="message" rows="3"></textarea>
+          </div>
+        </div>
+        <ul class="actions">
+          <li><input type="submit" value='Send A Message' /></li>
+        </ul>
+      </form>
+    </section>
+    
+    <section class="split contact">
+        
+        <section class="alt">
+            <h3>Address</h3>
+            <p>
+                
+                     Chengdu · China
+                
+                     <br/>  This is a city that comes and doesn&#39;t want to go
+                
+            </p>
+        </section>
+        
+        
+        <section>
+            <h3>Phone</h3>
+            <p><a href="tel:no%20way">no way</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Email</h3>
+            <p><a href="mailto:yeqown@gmail.com">yeqown@gmail.com</a></p>
+        </section>
+        
+        
+        <section>
+            <h3>Social</h3>
+            <ul class="icons alt">
+                
+                <li><a href="https://twitter.com/yeqown" class="icon alt fa-twitter"><span class="label">Twitter</span></a></li>
+                
+                
+                
+                
+                
+                <li><a href="https://github.com/yeqown" class="icon alt fa-github"><span class="label">GitHub</span></a></li>
+                
+                
+                
+                
+                
+            </ul>
+        </section>
+        
+    </section>
+</footer>
+
+                    
+<div id="copyright">
+    <ul><li>&copy; Yeqown</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li><li>Hugo Port: <a href="https://curtistimson.co.uk">curttimson</a></li></ul>
+</div>
+
+
+            </div>
+            
+            
+
+
+
+
+
+
+
+
+
+
+<script src='/assets/js/bundle.js'></script>
+	</body>
+</html>
